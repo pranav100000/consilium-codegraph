@@ -7,6 +7,9 @@ use tracing_subscriber::FmtSubscriber;
 use ts_harness::TypeScriptHarness;
 use py_harness::PythonHarness;
 use go_harness::GoHarness;
+use rust_harness::RustHarness;
+use java_harness::JavaHarness;
+use cpp_harness::CppHarness;
 
 mod walker;
 use walker::FileWalker;
@@ -162,6 +165,10 @@ async fn main() -> Result<()> {
                 let mut ts_harness = TypeScriptHarness::new()?;
                 let mut py_harness = PythonHarness::new()?;
                 let mut go_harness = GoHarness::new()?;
+                let mut rust_harness = RustHarness::new()?;
+                let mut java_harness = JavaHarness::new()?;
+                let mut cpp_harness = CppHarness::new_cpp()?;
+                let mut c_harness = CppHarness::new_c()?;
                 let mut total_symbols = 0;
                 let mut total_edges = 0;
                 
@@ -186,7 +193,7 @@ async fn main() -> Result<()> {
                     let hash = FileWalker::compute_file_hash(&content);
                     
                     // Store file information
-                    store.insert_file(commit_id, &relative_path, hash.clone(), content.len())?;
+                    store.insert_file(commit_id, &relative_path, &hash, content.len())?;
                     
                     // Parse TypeScript/JavaScript files
                     if relative_path.ends_with(".ts") || relative_path.ends_with(".tsx") ||
@@ -247,6 +254,108 @@ async fn main() -> Result<()> {
                             &content,
                             &relative_path,
                             &commit_sha
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
+                    // Parse Rust files
+                    else if relative_path.ends_with(".rs") {
+                        let (symbols, edges, occurrences) = rust_harness.parse(
+                            &relative_path,
+                            &content
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
+                    // Parse Java files
+                    else if relative_path.ends_with(".java") {
+                        let (symbols, edges, occurrences) = java_harness.parse(
+                            &relative_path,
+                            &content
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
+                    // Parse C++ files
+                    else if relative_path.ends_with(".cpp") || relative_path.ends_with(".cc") 
+                        || relative_path.ends_with(".cxx") || relative_path.ends_with(".hpp") 
+                        || relative_path.ends_with(".hh") || relative_path.ends_with(".hxx") {
+                        let (symbols, edges, occurrences) = cpp_harness.parse(
+                            &relative_path,
+                            &content
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
+                    // Parse C files
+                    else if relative_path.ends_with(".c") || relative_path.ends_with(".h") {
+                        let (symbols, edges, occurrences) = c_harness.parse(
+                            &relative_path,
+                            &content
                         )?;
                         
                         // Store symbols

@@ -1,0 +1,17 @@
+[package]
+name = "cpp_harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+tree-sitter = "0.20"
+tree-sitter-cpp = "0.20"
+tree-sitter-c = "0.20"
+protocol = { path = "../protocol" }
+tracing = "0.1"
+md5 = "0.7"
+
+[dev-dependencies]
+pretty_assertions = "1.4"

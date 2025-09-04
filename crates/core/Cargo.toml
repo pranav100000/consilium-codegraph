@@ -14,6 +14,9 @@ store = { path = "../store" }
 ts_harness = { path = "../ts_harness" }
 py_harness = { path = "../py_harness" }
 go_harness = { path = "../go_harness" }
+rust_harness = { path = "../rust_harness" }
+java_harness = { path = "../java_harness" }
+cpp_harness = { path = "../cpp_harness" }
 scip_mapper = { path = "../scip_mapper" }
 clap = { workspace = true }
 tokio = { workspace = true }

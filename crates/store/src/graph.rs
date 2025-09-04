@@ -148,27 +148,27 @@ impl CodeGraph {
     
     /// Find shortest path between two symbols
     pub fn find_path(&self, from_id: &str, to_id: &str) -> Option<Vec<String>> {
-        use petgraph::algo::dijkstra;
+        use petgraph::algo::astar;
         
         let from_node = self.symbol_to_node.get(from_id)?;
         let to_node = self.symbol_to_node.get(to_id)?;
         
-        let paths = dijkstra(&self.graph, *from_node, Some(*to_node), |_| 1);
+        // Use A* to find the shortest path and get the actual path
+        let result = astar(
+            &self.graph,
+            *from_node,
+            |node| node == *to_node,
+            |_| 1,  // Edge weight
+            |_| 0,  // Heuristic (0 makes it equivalent to Dijkstra)
+        );
         
-        if paths.contains_key(to_node) {
-            // Reconstruct path using BFS
-            let mut path = Vec::new();
-            let _current = *to_node;
-            
-            // This is simplified - in production we'd track predecessors
-            path.push(to_id.to_string());
-            
-            // For now, just return endpoints
-            if from_id != to_id {
-                path.insert(0, from_id.to_string());
-            }
-            
-            Some(path)
+        if let Some((_, path)) = result {
+            // Convert node indices to symbol IDs
+            let symbol_path: Vec<String> = path
+                .iter()
+                .filter_map(|&node| self.node_to_symbol.get(&node).cloned())
+                .collect();
+            Some(symbol_path)
         } else {
             None
         }

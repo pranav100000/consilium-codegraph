@@ -142,6 +142,17 @@ impl GraphStore {
             "#,
         )?;
         
+        // Add indexes for better query performance
+        self.conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_symbol_fqn ON symbol(fqn);
+             CREATE INDEX IF NOT EXISTS idx_symbol_file ON symbol(file_path);
+             CREATE INDEX IF NOT EXISTS idx_edge_src ON edge(src);
+             CREATE INDEX IF NOT EXISTS idx_edge_dst ON edge(dst);
+             CREATE INDEX IF NOT EXISTS idx_edge_type ON edge(edge_type);
+             CREATE INDEX IF NOT EXISTS idx_occurrence_symbol ON occurrence(symbol_id);
+             CREATE INDEX IF NOT EXISTS idx_file_commit ON file(commit_id, path);"
+        )?;
+        
         info!("Database schema initialized at {:?}", self.db_path);
         Ok(())
     }
@@ -668,6 +679,77 @@ impl GraphStore {
         )?;
         
         Ok(count as usize)
+    }
+    
+    // Additional methods needed by the main binary
+    
+    pub fn get_last_scanned_commit(&self) -> Result<Option<String>> {
+        // Same as get_latest_commit
+        self.get_latest_commit()
+    }
+    
+    pub fn create_commit_snapshot(&self, commit_sha: &str) -> Result<i64> {
+        // Same as get_or_create_commit
+        self.get_or_create_commit(commit_sha)
+    }
+    
+    pub fn delete_file_data(&self, commit_id: i64, file_path: &str) -> Result<()> {
+        // Same as clear_file_data
+        self.clear_file_data(commit_id, file_path)
+    }
+    
+    pub fn find_symbol_by_fqn(&self, fqn: &str) -> Result<Option<SymbolIR>> {
+        // Same as get_symbol_by_fqn
+        self.get_symbol_by_fqn(fqn)
+    }
+    
+    pub fn find_symbol_by_id(&self, symbol_id: &str) -> Result<Option<SymbolIR>> {
+        // Same as get_symbol
+        self.get_symbol(symbol_id)
+    }
+    
+    pub fn get_callers(&self, symbol_id: &str, max_depth: usize) -> Result<Vec<SymbolIR>> {
+        // Build graph and find callers
+        let graph = self.build_graph()?;
+        let caller_ids = graph.find_callers(symbol_id, max_depth);
+        
+        let mut callers = Vec::new();
+        for id in caller_ids {
+            if let Some(symbol) = self.get_symbol(&id)? {
+                callers.push(symbol);
+            }
+        }
+        Ok(callers)
+    }
+    
+    pub fn get_callees(&self, symbol_id: &str, max_depth: usize) -> Result<Vec<SymbolIR>> {
+        // Build graph and find callees
+        let graph = self.build_graph()?;
+        let callee_ids = graph.find_callees(symbol_id, max_depth);
+        
+        let mut callees = Vec::new();
+        for id in callee_ids {
+            if let Some(symbol) = self.get_symbol(&id)? {
+                callees.push(symbol);
+            }
+        }
+        Ok(callees)
+    }
+    
+    pub fn get_file_dependents(&self, file_path: &str) -> Result<Vec<String>> {
+        // Find files that import/depend on this file
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT file_src FROM edge 
+             WHERE file_dst = ?1 AND edge_type = 'Imports'"
+        )?;
+        
+        let dependents = stmt.query_map([file_path], |row| {
+            row.get::<_, String>(0)
+        })?
+        .filter_map(Result::ok)
+        .collect();
+        
+        Ok(dependents)
     }
 }
 

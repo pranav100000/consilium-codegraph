@@ -1,0 +1,16 @@
+[package]
+name = "rust_harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[build-dependencies]
+cc = "1.0"
+
+[dependencies]
+protocol = { path = "../protocol" }
+tree-sitter = { workspace = true }
+tree-sitter-rust = "0.24.0"
+anyhow = { workspace = true }
+tracing = { workspace = true }
+md5 = "0.7"

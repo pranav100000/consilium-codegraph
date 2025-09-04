@@ -9,6 +9,8 @@ pub enum Language {
     Go,
     Rust,
     Java,
+    C,
+    Cpp,
     Unknown,
 }
 
@@ -24,10 +26,12 @@ pub enum SymbolKind {
     Package,
     Namespace,
     Enum,
+    EnumMember,
     Struct,
     Trait,
     Constant,
     Field,
+    Property,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

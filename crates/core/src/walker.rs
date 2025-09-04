@@ -23,6 +23,19 @@ impl FileWalker {
         extensions.insert("pyi".to_string());
         // Go
         extensions.insert("go".to_string());
+        // Rust
+        extensions.insert("rs".to_string());
+        // Java
+        extensions.insert("java".to_string());
+        // C/C++
+        extensions.insert("c".to_string());
+        extensions.insert("h".to_string());
+        extensions.insert("cpp".to_string());
+        extensions.insert("cc".to_string());
+        extensions.insert("cxx".to_string());
+        extensions.insert("hpp".to_string());
+        extensions.insert("hh".to_string());
+        extensions.insert("hxx".to_string());
         
         Self { root, extensions }
     }
@@ -91,12 +104,13 @@ mod tests {
         fs::write(dir.path().join("utils.js"), "export const x = 1")?;
         fs::write(dir.path().join("test.py"), "def main(): pass")?;
         fs::write(dir.path().join("app.go"), "package main")?;
+        fs::write(dir.path().join("lib.rs"), "fn main() {}")?;
         fs::write(dir.path().join("readme.md"), "# README")?; // Should be ignored
         
         let walker = FileWalker::new(dir.path().to_path_buf());
         let files = walker.walk()?;
         
-        assert_eq!(files.len(), 4, "Should find 4 source files");
+        assert_eq!(files.len(), 5, "Should find 5 source files");
         
         let file_names: Vec<String> = files.iter()
             .filter_map(|p| p.file_name())
@@ -107,6 +121,7 @@ mod tests {
         assert!(file_names.contains(&"utils.js".to_string()));
         assert!(file_names.contains(&"test.py".to_string()));
         assert!(file_names.contains(&"app.go".to_string()));
+        assert!(file_names.contains(&"lib.rs".to_string()));
         assert!(!file_names.contains(&"readme.md".to_string()));
         
         Ok(())
