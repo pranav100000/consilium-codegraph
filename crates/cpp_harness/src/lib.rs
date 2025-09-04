@@ -7,6 +7,8 @@ use tree_sitter::{Node, Parser};
 mod debug;
 #[cfg(test)]
 mod edge_cases;
+#[cfg(test)]
+mod complex_tests;
 
 pub struct CppHarness {
     parser: Parser,

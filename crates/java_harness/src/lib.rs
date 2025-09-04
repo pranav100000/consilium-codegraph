@@ -80,6 +80,9 @@ impl JavaHarness {
             "enum_declaration" => {
                 self.handle_enum(node, content, file_path, symbols, edges, occurrences, context)?;
             }
+            "record_declaration" => {
+                self.handle_record(node, content, file_path, symbols, edges, occurrences, context)?;
+            }
             "method_declaration" | "constructor_declaration" => {
                 self.handle_method(node, content, file_path, symbols, occurrences, context)?;
             }
@@ -558,6 +561,79 @@ impl JavaHarness {
         Ok(())
     }
 
+    fn handle_record(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        edges: &mut Vec<EdgeIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        let name_node = node.child_by_field_name("name").context("Record without name")?;
+        let name = self.get_text(name_node, content);
+
+        let fqn = context.build_fqn(&name);
+        let sig_hash = format!("{:x}", md5::compute(&fqn));
+
+        let modifiers = self.get_modifiers(node, content);
+        let is_public = modifiers.iter().any(|m| m == "public");
+
+        // Get record parameters (components)
+        let mut params = Vec::new();
+        if let Some(param_list) = node.child_by_field_name("parameters") {
+            for param in param_list.children(&mut param_list.walk()) {
+                if param.kind() == "formal_parameter" || param.kind() == "record_component" {
+                    let param_text = self.get_text(param, content);
+                    params.push(param_text);
+                }
+            }
+        }
+        
+        let signature = format!("record {}({})", name, params.join(", "));
+
+        let symbol = SymbolIR {
+            id: format!("{}#{}", file_path, fqn),
+            lang: ProtoLanguage::Java,
+            kind: SymbolKind::Class, // Records are like classes
+            name: name.clone(),
+            fqn: fqn.clone(),
+            signature: Some(signature),
+            file_path: file_path.to_string(),
+            span: self.node_to_span(name_node),
+            visibility: if is_public { Some("public".to_string()) } else { None },
+            doc: None,
+            sig_hash,
+        };
+
+        symbols.push(symbol.clone());
+
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(symbol.id.clone()),
+            role: OccurrenceRole::Definition,
+            span: self.node_to_span(name_node),
+            token: name.clone(),
+        });
+
+        // Process record body (methods, compact constructor, etc)
+        context.push_class(name.clone());
+        if let Some(body) = node.child_by_field_name("body") {
+            for child in body.children(&mut body.walk()) {
+                match child.kind() {
+                    "method_declaration" | "compact_constructor_declaration" => {
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        context.pop_class();
+
+        Ok(())
+    }
+
     fn handle_annotation(
         &self,
         node: Node,
@@ -753,6 +829,8 @@ impl ParseContext {
 mod debug;
 #[cfg(test)]
 mod edge_cases;
+#[cfg(test)]
+mod complex_tests;
 
 #[cfg(test)]
 mod tests {

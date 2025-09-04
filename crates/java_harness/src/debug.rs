@@ -51,6 +51,47 @@ public class Dog extends Animal implements Runnable {
     }
 
     #[test]
+    fn debug_record_parsing() {
+        let source = r#"
+public record Point(int x, int y) {
+    public Point {
+        if (x < 0 || y < 0) {
+            throw new IllegalArgumentException();
+        }
+    }
+    
+    public double distance() {
+        return Math.sqrt(x * x + y * y);
+    }
+}
+"#;
+
+        let mut parser = Parser::new();
+        let lang = get_language();
+        parser.set_language(&lang).unwrap();
+        
+        let tree = parser.parse(source, None).unwrap();
+        println!("\n=== Record AST structure ===");
+        print_tree(tree.root_node(), source, 0);
+        
+        // Also test what our parser finds
+        let mut harness = JavaHarness::new().unwrap();
+        let (symbols, edges, _) = harness.parse("test.java", source).unwrap();
+        
+        println!("\n=== Symbols found ===");
+        for sym in &symbols {
+            println!("  {} ({:?}) - fqn: {}", sym.name, sym.kind, sym.fqn);
+        }
+        
+        println!("\n=== Edges found ===");
+        for edge in &edges {
+            println!("  {:?}: {:?} -> {:?}", edge.edge_type, edge.src, edge.dst);
+        }
+        
+        assert!(true);
+    }
+    
+    #[test]
     fn debug_inheritance_parsing() {
         let source = r#"
 public class Dog extends Animal implements Runnable {
