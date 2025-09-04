@@ -1,0 +1,12 @@
+[package]
+name = "py_harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+protocol = { path = "../protocol" }
+tree-sitter = { workspace = true }
+tree-sitter-python = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

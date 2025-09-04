@@ -27,6 +27,7 @@ pub enum SymbolKind {
     Struct,
     Trait,
     Constant,
+    Field,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

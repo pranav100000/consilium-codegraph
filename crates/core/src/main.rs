@@ -5,6 +5,8 @@ use store::GraphStore;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use ts_harness::TypeScriptHarness;
+use py_harness::PythonHarness;
+use go_harness::GoHarness;
 
 mod walker;
 use walker::FileWalker;
@@ -141,6 +143,8 @@ async fn main() -> Result<()> {
                 let commit_id = store.create_commit_snapshot(&commit_sha)?;
                 
                 let mut ts_harness = TypeScriptHarness::new()?;
+                let mut py_harness = PythonHarness::new()?;
+                let mut go_harness = GoHarness::new()?;
                 let mut total_symbols = 0;
                 let mut total_edges = 0;
                 
@@ -171,6 +175,58 @@ async fn main() -> Result<()> {
                     if relative_path.ends_with(".ts") || relative_path.ends_with(".tsx") ||
                        relative_path.ends_with(".js") || relative_path.ends_with(".jsx") {
                         let (symbols, edges, occurrences) = ts_harness.parse_file(
+                            &content,
+                            &relative_path,
+                            &commit_sha
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
+                    // Parse Python files
+                    else if relative_path.ends_with(".py") {
+                        let (symbols, edges, occurrences) = py_harness.parse_file(
+                            &content,
+                            &relative_path,
+                            &commit_sha
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
+                    // Parse Go files
+                    else if relative_path.ends_with(".go") {
+                        let (symbols, edges, occurrences) = go_harness.parse_file(
                             &content,
                             &relative_path,
                             &commit_sha

@@ -4,6 +4,8 @@ members = [
     "crates/protocol",
     "crates/store",
     "crates/ts_harness",
+    "crates/py_harness",
+    "crates/go_harness",
     "crates/scip_mapper"
 ]
 resolver = "2"
