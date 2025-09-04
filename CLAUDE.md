@@ -84,10 +84,25 @@ When modifying SQL schemas:
 
 ## Testing Approach
 
+- **Test Repository**: Use `./test_repo` for development testing - this should contain sample TypeScript, Python, and Go files
 - **Golden tests**: Compare symbol/edge counts against expected values in `testdata/` repos
 - **Idempotence tests**: Ensure re-running scan produces zero mutations
 - **Integration tests**: Test full pipeline from source to query results
 - Run specific golden tests: `make test-goldens` (once Makefile is created)
+
+## Test Commands
+
+When testing the CLI, use the test repository:
+```bash
+# Run scan on test repository
+cargo run -p reviewbot -- --repo ./test_repo scan
+
+# Show symbols from test repository
+cargo run -p reviewbot -- --repo ./test_repo show --symbol <FQN>
+
+# Search in test repository  
+cargo run -p reviewbot -- --repo ./test_repo search "query"
+```
 
 ## Performance Targets
 
