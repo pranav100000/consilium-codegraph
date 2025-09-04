@@ -23,6 +23,18 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+enum GraphCommands {
+    Stats,
+    Cycles {
+        symbol: String,
+    },
+    Path {
+        from: String,
+        to: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum Commands {
     Scan {
         #[arg(long)]
@@ -66,6 +78,11 @@ enum Commands {
         
         #[arg(long)]
         hybrid: bool,
+    },
+    
+    Graph {
+        #[command(subcommand)]
+        cmd: GraphCommands,
     },
 }
 
@@ -315,6 +332,72 @@ async fn main() -> Result<()> {
                 for sym in results {
                     println!("  {} ({:?})", sym.fqn, sym.kind);
                     println!("    File: {}:{}", sym.file_path, sym.span.start_line + 1);
+                }
+            }
+        }
+        
+        Commands::Graph { cmd } => {
+            let store = GraphStore::new(&repo_root)?;
+            
+            match cmd {
+                GraphCommands::Stats => {
+                    let graph = store.build_graph()?;
+                    let stats = graph.stats();
+                    
+                    println!("Graph Statistics:");
+                    println!("  Nodes (symbols): {}", stats.node_count);
+                    println!("  Edges (relationships): {}", stats.edge_count);
+                    println!("  Has cycles: {}", if stats.is_cyclic { "Yes" } else { "No" });
+                }
+                
+                GraphCommands::Cycles { symbol } => {
+                    let graph = store.build_graph()?;
+                    let cycles = graph.find_cycles_containing(&symbol);
+                    
+                    if cycles.is_empty() {
+                        println!("No cycles found containing '{}'", symbol);
+                    } else {
+                        println!("Found {} cycle(s) containing '{}':", cycles.len(), symbol);
+                        for (i, cycle) in cycles.iter().enumerate() {
+                            println!("\nCycle {}:", i + 1);
+                            for sym_id in cycle {
+                                if let Some(sym) = store.find_symbol_by_id(sym_id)? {
+                                    println!("  - {} ({})", sym.fqn, sym.file_path);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                GraphCommands::Path { from, to } => {
+                    let graph = store.build_graph()?;
+                    
+                    // Find symbols by FQN first
+                    let from_sym = store.find_symbol_by_fqn(&from)?;
+                    let to_sym = store.find_symbol_by_fqn(&to)?;
+                    
+                    if from_sym.is_none() {
+                        println!("Source symbol not found: {}", from);
+                        return Ok(());
+                    }
+                    if to_sym.is_none() {
+                        println!("Target symbol not found: {}", to);
+                        return Ok(());
+                    }
+                    
+                    let from_id = from_sym.unwrap().id;
+                    let to_id = to_sym.unwrap().id;
+                    
+                    if let Some(path) = graph.find_path(&from_id, &to_id) {
+                        println!("Path from '{}' to '{}':", from, to);
+                        for sym_id in path {
+                            if let Some(sym) = store.find_symbol_by_id(&sym_id)? {
+                                println!("  -> {} ({})", sym.fqn, sym.file_path);
+                            }
+                        }
+                    } else {
+                        println!("No path found from '{}' to '{}'", from, to);
+                    }
                 }
             }
         }

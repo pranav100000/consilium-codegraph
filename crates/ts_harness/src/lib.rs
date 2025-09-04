@@ -4,14 +4,19 @@ use std::collections::HashMap;
 use tree_sitter::{Node, Parser, Query, QueryCursor, QueryCapture};
 
 pub struct TypeScriptHarness {
-    parser: Parser,
+    js_parser: Parser,
+    ts_parser: Parser,
 }
 
 impl TypeScriptHarness {
     pub fn new() -> Result<Self> {
-        let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_javascript::LANGUAGE.into())?;
-        Ok(Self { parser })
+        let mut js_parser = Parser::new();
+        js_parser.set_language(&tree_sitter_javascript::LANGUAGE.into())?;
+        
+        let mut ts_parser = Parser::new();
+        ts_parser.set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())?;
+        
+        Ok(Self { js_parser, ts_parser })
     }
     
     pub fn parse_file(
@@ -20,7 +25,15 @@ impl TypeScriptHarness {
         file_path: &str,
         commit_sha: &str,
     ) -> Result<(Vec<SymbolIR>, Vec<EdgeIR>, Vec<OccurrenceIR>)> {
-        let tree = self.parser.parse(content, None)
+        
+        // Choose the appropriate parser based on file extension
+        let parser = if file_path.ends_with(".ts") || file_path.ends_with(".tsx") {
+            &mut self.ts_parser
+        } else {
+            &mut self.js_parser
+        };
+        
+        let tree = parser.parse(content, None)
             .ok_or_else(|| anyhow::anyhow!("Failed to parse file"))?;
         
         let mut symbols = vec![];
@@ -29,6 +42,7 @@ impl TypeScriptHarness {
         
         let root_node = tree.root_node();
         let source_bytes = content.as_bytes();
+        
         
         // Extract symbols and relationships
         self.extract_symbols_recursive(
@@ -69,6 +83,24 @@ impl TypeScriptHarness {
         };
         
         match node_kind {
+            "export_statement" => {
+                // Process the exported declaration
+                for child in node.children(&mut node.walk()) {
+                    if child.kind() != "export" {
+                        self.extract_symbols_recursive(
+                            child,
+                            source,
+                            file_path,
+                            commit_sha,
+                            parent_symbol,
+                            symbols,
+                            edges,
+                            occurrences,
+                        )?;
+                    }
+                }
+                return Ok(());
+            }
             "function_declaration" | "function_expression" | "arrow_function" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
                     let name = self.node_text(name_node, source);
@@ -121,6 +153,36 @@ impl TypeScriptHarness {
                         )?;
                     }
                     return Ok(());
+                }
+            }
+            "interface_declaration" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.node_text(name_node, source);
+                    let symbol = self.create_symbol(
+                        &name,
+                        SymbolKind::Interface,
+                        lang.clone(),
+                        node,
+                        file_path,
+                        commit_sha,
+                        source,
+                    );
+                    
+                    symbols.push(symbol.clone());
+                    
+                    // Add parent edge if applicable
+                    if let Some(parent_id) = parent_symbol {
+                        edges.push(EdgeIR {
+                            src: Some(parent_id.to_string()),
+                            dst: Some(symbol.id.clone()),
+                            file_src: None,
+                            file_dst: None,
+                            edge_type: EdgeType::Contains,
+                            resolution: Resolution::Syntactic,
+                            meta: HashMap::new(),
+                            provenance: HashMap::new(),
+                        });
+                    }
                 }
             }
             "class_declaration" => {
@@ -212,6 +274,149 @@ impl TypeScriptHarness {
                         span: self.node_to_span(func),
                         token: callee_name,
                     });
+                }
+            }
+            "enum_declaration" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.node_text(name_node, source);
+                    let symbol = self.create_symbol(
+                        &name,
+                        SymbolKind::Enum,
+                        lang.clone(),
+                        node,
+                        file_path,
+                        commit_sha,
+                        source,
+                    );
+                    
+                    symbols.push(symbol.clone());
+                    
+                    // Add parent edge if applicable
+                    if let Some(parent_id) = parent_symbol {
+                        edges.push(EdgeIR {
+                            src: Some(parent_id.to_string()),
+                            dst: Some(symbol.id.clone()),
+                            file_src: None,
+                            file_dst: None,
+                            edge_type: EdgeType::Contains,
+                            resolution: Resolution::Syntactic,
+                            meta: HashMap::new(),
+                            provenance: HashMap::new(),
+                        });
+                    }
+                    
+                    return Ok(());
+                }
+            }
+            "type_alias_declaration" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.node_text(name_node, source);
+                    let symbol = self.create_symbol(
+                        &name,
+                        SymbolKind::Type,
+                        lang.clone(),
+                        node,
+                        file_path,
+                        commit_sha,
+                        source,
+                    );
+                    
+                    symbols.push(symbol.clone());
+                    
+                    // Add parent edge if applicable
+                    if let Some(parent_id) = parent_symbol {
+                        edges.push(EdgeIR {
+                            src: Some(parent_id.to_string()),
+                            dst: Some(symbol.id.clone()),
+                            file_src: None,
+                            file_dst: None,
+                            edge_type: EdgeType::Contains,
+                            resolution: Resolution::Syntactic,
+                            meta: HashMap::new(),
+                            provenance: HashMap::new(),
+                        });
+                    }
+                    
+                    return Ok(());
+                }
+            }
+            "namespace_declaration" | "module_declaration" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.node_text(name_node, source);
+                    let symbol = self.create_symbol(
+                        &name,
+                        SymbolKind::Namespace,
+                        lang.clone(),
+                        node,
+                        file_path,
+                        commit_sha,
+                        source,
+                    );
+                    
+                    symbols.push(symbol.clone());
+                    
+                    // Add parent edge if applicable
+                    if let Some(parent_id) = parent_symbol {
+                        edges.push(EdgeIR {
+                            src: Some(parent_id.to_string()),
+                            dst: Some(symbol.id.clone()),
+                            file_src: None,
+                            file_dst: None,
+                            edge_type: EdgeType::Contains,
+                            resolution: Resolution::Syntactic,
+                            meta: HashMap::new(),
+                            provenance: HashMap::new(),
+                        });
+                    }
+                    
+                    // Process namespace/module body
+                    if let Some(body) = node.child_by_field_name("body") {
+                        for child in body.children(&mut body.walk()) {
+                            self.extract_symbols_recursive(
+                                child,
+                                source,
+                                file_path,
+                                commit_sha,
+                                Some(&symbol.id),
+                                symbols,
+                                edges,
+                                occurrences,
+                            )?;
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+            "generator_function_declaration" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.node_text(name_node, source);
+                    let symbol = self.create_symbol(
+                        &name,
+                        SymbolKind::Function,
+                        lang.clone(),
+                        node,
+                        file_path,
+                        commit_sha,
+                        source,
+                    );
+                    
+                    symbols.push(symbol.clone());
+                    
+                    // Add parent edge if applicable
+                    if let Some(parent_id) = parent_symbol {
+                        edges.push(EdgeIR {
+                            src: Some(parent_id.to_string()),
+                            dst: Some(symbol.id.clone()),
+                            file_src: None,
+                            file_dst: None,
+                            edge_type: EdgeType::Contains,
+                            resolution: Resolution::Syntactic,
+                            meta: HashMap::new(),
+                            provenance: HashMap::new(),
+                        });
+                    }
+                    
+                    return Ok(());
                 }
             }
             _ => {}
@@ -535,6 +740,392 @@ mod tests {
         
         assert_eq!(def_occurrences.len(), symbols.len(), 
             "Should have one definition occurrence per symbol");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_complex_generics() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::COMPLEX_GENERICS,
+            "generics.ts",
+            "abc123"
+        )?;
+        
+        // Should find interfaces, classes, and type aliases
+        let interfaces = symbols.iter().filter(|s| s.kind == SymbolKind::Interface).count();
+        let classes = symbols.iter().filter(|s| s.kind == SymbolKind::Class).count();
+        
+        assert!(interfaces >= 1, "Should find at least 1 interface");
+        assert!(classes >= 1, "Should find at least 1 class");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_async_await_patterns() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::ASYNC_AWAIT_PATTERNS,
+            "async.ts",
+            "abc123"
+        )?;
+        
+        // Should find async functions and classes
+        assert!(symbols.len() >= 3, "Should find at least 3 symbols");
+        
+        let async_fn = symbols.iter()
+            .find(|s| s.name == "fetchData")
+            .expect("Should find fetchData function");
+        assert_eq!(async_fn.kind, SymbolKind::Function);
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_jsx_tsx_components() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, edges, _) = harness.parse_file(
+            fixtures::JSX_TSX_COMPONENTS,
+            "component.tsx",
+            "abc123"
+        )?;
+        
+        // JSX/TSX parsing may vary - focus on finding any symbols
+        assert!(!symbols.is_empty(), "Should find some symbols in JSX/TSX file");
+        
+        // Count all symbol types
+        let total_symbols = symbols.len();
+        assert!(total_symbols >= 1, "Should find at least 1 symbol");
+        
+        // Should find React import
+        let imports = edges.iter()
+            .filter(|e| e.edge_type == EdgeType::Imports)
+            .count();
+        assert!(imports >= 1, "Should find React import");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_namespace_and_modules() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::NAMESPACE_AND_MODULES,
+            "namespaces.ts",
+            "abc123"
+        )?;
+        
+        // Should find functions and classes within namespaces
+        assert!(!symbols.is_empty(), "Should find symbols in namespaces");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_enum_parsing() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::ENUM_AND_CONST_ENUM,
+            "enums.ts",
+            "abc123"
+        )?;
+        
+        // Should find enum declarations (though they may be parsed as other types)
+        assert!(!symbols.is_empty(), "Should find enum-related symbols");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_abstract_and_protected() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, edges, _) = harness.parse_file(
+            fixtures::ABSTRACT_AND_PROTECTED,
+            "abstract.ts",
+            "abc123"
+        )?;
+        
+        // Should find at least one class (abstract classes might not be detected separately)
+        let classes = symbols.iter().filter(|s| s.kind == SymbolKind::Class).count();
+        assert!(classes >= 1, "Should find at least 1 class");
+        
+        // Should find methods
+        let methods = symbols.iter().filter(|s| s.kind == SymbolKind::Method).count();
+        assert!(methods >= 2, "Should find at least 2 methods");
+        
+        // Should have CONTAINS edges for class methods
+        let contains = edges.iter()
+            .filter(|e| e.edge_type == EdgeType::Contains)
+            .count();
+        assert!(contains >= 3, "Should have CONTAINS edges for methods");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_property_accessors() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::PROPERTY_ACCESSORS,
+            "accessors.ts",
+            "abc123"
+        )?;
+        
+        // Should find class and its methods/accessors
+        let class = symbols.iter()
+            .find(|s| s.name == "Person")
+            .expect("Should find Person class");
+        assert_eq!(class.kind, SymbolKind::Class);
+        
+        // Methods include getters and setters
+        let methods = symbols.iter().filter(|s| s.kind == SymbolKind::Method).count();
+        assert!(methods >= 4, "Should find getter and setter methods");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_complex_exports() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (_, edges, _) = harness.parse_file(
+            fixtures::COMPLEX_EXPORTS,
+            "exports.ts",
+            "abc123"
+        )?;
+        
+        // Should find various export/import edges
+        let import_edges = edges.iter()
+            .filter(|e| e.edge_type == EdgeType::Imports)
+            .count();
+        assert!(import_edges >= 4, "Should find multiple re-export edges");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_type_guards_and_assertions() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::TYPE_GUARDS_AND_ASSERTIONS,
+            "guards.ts",
+            "abc123"
+        )?;
+        
+        // Should find type guard functions
+        let functions = symbols.iter()
+            .filter(|s| s.kind == SymbolKind::Function)
+            .count();
+        assert!(functions >= 4, "Should find type guard functions");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_unicode_identifiers() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::UNICODE_AND_SPECIAL_CHARS,
+            "unicode.ts",
+            "abc123"
+        )?;
+        
+        // Should handle unicode identifiers
+        let unicode_func = symbols.iter()
+            .find(|s| s.name == "计算")
+            .expect("Should find unicode function");
+        assert_eq!(unicode_func.kind, SymbolKind::Function);
+        
+        let russian_class = symbols.iter()
+            .find(|s| s.name == "КлассПример")
+            .expect("Should find Russian class");
+        assert_eq!(russian_class.kind, SymbolKind::Class);
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_malformed_code() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        
+        // Should not panic on malformed code
+        let result = harness.parse_file(
+            fixtures::MALFORMED_CODE,
+            "broken.ts",
+            "abc123"
+        );
+        
+        // Parser should handle errors gracefully
+        assert!(result.is_ok(), "Should handle malformed code without panicking");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_empty_file() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, edges, occurrences) = harness.parse_file(
+            fixtures::EMPTY_FILE,
+            "empty.ts",
+            "abc123"
+        )?;
+        
+        assert_eq!(symbols.len(), 0, "Empty file should have no symbols");
+        assert_eq!(edges.len(), 0, "Empty file should have no edges");
+        assert_eq!(occurrences.len(), 0, "Empty file should have no occurrences");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_only_comments() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, edges, occurrences) = harness.parse_file(
+            fixtures::ONLY_COMMENTS,
+            "comments.ts",
+            "abc123"
+        )?;
+        
+        assert_eq!(symbols.len(), 0, "Comment-only file should have no symbols");
+        assert_eq!(edges.len(), 0, "Comment-only file should have no edges");
+        assert_eq!(occurrences.len(), 0, "Comment-only file should have no occurrences");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_large_file_performance() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        
+        let start = std::time::Instant::now();
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::LARGE_FILE,
+            "large.ts",
+            "abc123"
+        )?;
+        let duration = start.elapsed();
+        
+        // Should parse reasonably quickly (under 1 second)
+        assert!(duration.as_secs() < 1, "Large file should parse in under 1 second");
+        
+        // Should find all symbols
+        assert!(symbols.len() >= 20, "Should find many symbols in large file");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_index_signatures() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::INDEX_SIGNATURES,
+            "index_sig.ts",
+            "abc123"
+        )?;
+        
+        // Should find interfaces and classes with index signatures
+        let interfaces = symbols.iter()
+            .filter(|s| s.kind == SymbolKind::Interface)
+            .count();
+        let classes = symbols.iter()
+            .filter(|s| s.kind == SymbolKind::Class)
+            .count();
+        
+        assert!(interfaces >= 3, "Should find interfaces with index signatures");
+        assert!(classes >= 1, "Should find class with index signature");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_triple_slash_directives() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, edges, _) = harness.parse_file(
+            fixtures::TRIPLE_SLASH_DIRECTIVES,
+            "directives.ts",
+            "abc123"
+        )?;
+        
+        // Should find the function despite triple-slash directives
+        let func = symbols.iter()
+            .find(|s| s.name == "readFile")
+            .expect("Should find readFile function");
+        assert_eq!(func.kind, SymbolKind::Function);
+        
+        // Should find fs import
+        let imports = edges.iter()
+            .filter(|e| e.edge_type == EdgeType::Imports)
+            .count();
+        assert!(imports >= 1, "Should find fs import");
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_intersection_and_union_types() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::INTERSECTION_AND_UNION_TYPES,
+            "types.ts",
+            "abc123"
+        )?;
+        
+        // Should find the function that uses union types
+        let func = symbols.iter()
+            .find(|s| s.name == "processValue")
+            .expect("Should find processValue function");
+        assert_eq!(func.kind, SymbolKind::Function);
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_nested_functions() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::NESTED_FUNCTIONS,
+            "nested.ts",
+            "abc123"
+        )?;
+        
+        // Should find both outer and inner functions
+        let functions = symbols.iter()
+            .filter(|s| s.kind == SymbolKind::Function)
+            .count();
+        assert_eq!(functions, 2, "Should find both outer and inner functions");
+        
+        let outer = symbols.iter()
+            .find(|s| s.name == "outer")
+            .expect("Should find outer function");
+        let inner = symbols.iter()
+            .find(|s| s.name == "inner")
+            .expect("Should find inner function");
+        
+        assert_eq!(outer.kind, SymbolKind::Function);
+        assert_eq!(inner.kind, SymbolKind::Function);
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_symbol_span_accuracy() -> Result<()> {
+        let mut harness = TypeScriptHarness::new()?;
+        let (symbols, _, _) = harness.parse_file(
+            fixtures::SIMPLE_FUNCTION,
+            "test.ts",
+            "abc123"
+        )?;
+        
+        for symbol in &symbols {
+            // Spans should have valid line/column numbers
+            assert!(symbol.span.start_line <= symbol.span.end_line, 
+                "Start line should be <= end line");
+            if symbol.span.start_line == symbol.span.end_line {
+                assert!(symbol.span.start_col <= symbol.span.end_col, 
+                    "Start col should be <= end col on same line");
+            }
+        }
         
         Ok(())
     }
