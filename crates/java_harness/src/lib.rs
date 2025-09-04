@@ -92,8 +92,31 @@ impl JavaHarness {
             "annotation_type_declaration" => {
                 self.handle_annotation(node, content, file_path, symbols, occurrences, context)?;
             }
+            "annotation" | "marker_annotation" => {
+                self.handle_annotation_usage(node, content, file_path, occurrences)?;
+            }
             "method_invocation" => {
                 self.handle_method_call(node, content, file_path, edges, occurrences)?;
+            }
+            "lambda_expression" => {
+                self.handle_lambda(node, content, file_path, symbols, occurrences, context)?;
+            }
+            "method_reference" => {
+                self.handle_method_reference(node, content, file_path, edges, occurrences)?;
+            }
+            "static_initializer" => {
+                self.handle_static_initializer(node, content, file_path, symbols, occurrences, context)?;
+            }
+            "instance_initializer" | "block" => {
+                // Check if this is an instance initializer (block at class level)
+                if context.current_class().is_some() {
+                    self.handle_instance_initializer(node, content, file_path, symbols, occurrences, context)?;
+                } else {
+                    // Regular block, walk children
+                    for child in node.children(&mut node.walk()) {
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
+                }
             }
             _ => {
                 // Recursively walk children for unhandled nodes
@@ -180,17 +203,47 @@ impl JavaHarness {
             properties.insert("is_final".to_string(), "true".to_string());
         }
 
+        // Build signature with generic type parameters
+        let mut signature = String::new();
+        if let Some(type_params_node) = node.child_by_field_name("type_parameters") {
+            signature.push('<');
+            let mut type_params = Vec::new();
+            for child in type_params_node.children(&mut type_params_node.walk()) {
+                if child.kind() == "type_parameter" {
+                    let mut param = String::new();
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        param = self.get_text(name_node, content);
+                    }
+                    // Check for bounds (extends clause)
+                    for bound_child in child.children(&mut child.walk()) {
+                        if bound_child.kind() == "type_bound" {
+                            param.push_str(" extends ");
+                            let bounds = bound_child.children(&mut bound_child.walk())
+                                .filter(|n| n.kind() != "extends")
+                                .map(|n| self.get_text(n, content))
+                                .collect::<Vec<_>>()
+                                .join(" & ");
+                            param.push_str(&bounds);
+                        }
+                    }
+                    type_params.push(param);
+                }
+            }
+            signature.push_str(&type_params.join(", "));
+            signature.push('>');
+        }
+
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
             kind: SymbolKind::Class,
             name: name.clone(),
             fqn: fqn.clone(),
-            signature: None,
+            signature: if signature.is_empty() { None } else { Some(signature) },
             file_path: file_path.to_string(),
             span: self.node_to_span(name_node),
             visibility: if is_public { Some("public".to_string()) } else { None },
-            doc: None,
+            doc: self.get_preceding_comment(node, content),
             sig_hash,
         };
 
@@ -281,13 +334,43 @@ impl JavaHarness {
         let modifiers = self.get_modifiers(node, content);
         let is_public = modifiers.iter().any(|m| m == "public");
 
+        // Build signature with generic type parameters
+        let mut signature = String::new();
+        if let Some(type_params_node) = node.child_by_field_name("type_parameters") {
+            signature.push('<');
+            let mut type_params = Vec::new();
+            for child in type_params_node.children(&mut type_params_node.walk()) {
+                if child.kind() == "type_parameter" {
+                    let mut param = String::new();
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        param = self.get_text(name_node, content);
+                    }
+                    // Check for bounds (extends clause)
+                    for bound_child in child.children(&mut child.walk()) {
+                        if bound_child.kind() == "type_bound" {
+                            param.push_str(" extends ");
+                            let bounds = bound_child.children(&mut bound_child.walk())
+                                .filter(|n| n.kind() != "extends")
+                                .map(|n| self.get_text(n, content))
+                                .collect::<Vec<_>>()
+                                .join(" & ");
+                            param.push_str(&bounds);
+                        }
+                    }
+                    type_params.push(param);
+                }
+            }
+            signature.push_str(&type_params.join(", "));
+            signature.push('>');
+        }
+
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
             kind: SymbolKind::Interface,
             name: name.clone(),
             fqn: fqn.clone(),
-            signature: None,
+            signature: if signature.is_empty() { None } else { Some(signature) },
             file_path: file_path.to_string(),
             span: self.node_to_span(name_node),
             visibility: if is_public { Some("public".to_string()) } else { None },
@@ -299,11 +382,37 @@ impl JavaHarness {
 
         occurrences.push(OccurrenceIR {
             file_path: file_path.to_string(),
-            symbol_id: Some(symbol.id),
+            symbol_id: Some(symbol.id.clone()),
             role: OccurrenceRole::Definition,
             span: self.node_to_span(name_node),
             token: name.clone(),
         });
+
+        // Handle extended interfaces (interface A extends B, C)
+        if let Some(extends_list) = node.child_by_field_name("super_interfaces") {
+            // Find type_list which contains the extended interface types
+            for child in extends_list.children(&mut extends_list.walk()) {
+                if child.kind() == "type_list" {
+                    // Iterate through all extended interfaces in the type_list
+                    for type_child in child.children(&mut child.walk()) {
+                        if type_child.kind() == "type_identifier" || type_child.kind() == "scoped_type_identifier" {
+                            let extended_interface = self.get_text(type_child, content);
+                            edges.push(EdgeIR {
+                                edge_type: EdgeType::Extends,
+                                src: Some(symbol.id.clone()),
+                                dst: Some(extended_interface),
+                                file_src: Some(file_path.to_string()),
+                                file_dst: None,
+                                resolution: protocol::Resolution::Syntactic,
+                                meta: HashMap::new(),
+                                provenance: HashMap::new(),
+                            });
+                        }
+                    }
+                    break;
+                }
+            }
+        }
 
         // Process interface body
         context.push_class(name.clone());
@@ -393,7 +502,7 @@ impl JavaHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: ProtoLanguage::Java,
-                kind: SymbolKind::Constant,
+                kind: SymbolKind::EnumMember,
                 name: name.clone(),
                 fqn,
                 signature: None,
@@ -443,9 +552,22 @@ impl JavaHarness {
 
         let modifiers = self.get_modifiers(node, content);
         let is_public = modifiers.iter().any(|m| m == "public");
+        let is_protected = modifiers.iter().any(|m| m == "protected");
+        let is_private = modifiers.iter().any(|m| m == "private");
         let is_static = modifiers.iter().any(|m| m == "static");
         let is_abstract = modifiers.iter().any(|m| m == "abstract");
         let is_final = modifiers.iter().any(|m| m == "final");
+
+        // Determine visibility
+        let visibility = if is_public {
+            Some("public".to_string())
+        } else if is_protected {
+            Some("protected".to_string())
+        } else if is_private {
+            Some("private".to_string())
+        } else {
+            Some("package".to_string()) // Default package-private visibility in Java
+        };
 
         let mut properties = HashMap::new();
         if is_static {
@@ -471,8 +593,8 @@ impl JavaHarness {
             signature: Some(signature),
             file_path: file_path.to_string(),
             span: self.node_to_span(node),
-            visibility: if is_public { Some("public".to_string()) } else { None },
-            doc: None,
+            visibility,
+            doc: self.get_preceding_comment(node, content),
             sig_hash,
         };
 
@@ -515,8 +637,21 @@ impl JavaHarness {
 
                     let modifiers = self.get_modifiers(node, content);
                     let is_public = modifiers.iter().any(|m| m == "public");
+                    let is_protected = modifiers.iter().any(|m| m == "protected");
+                    let is_private = modifiers.iter().any(|m| m == "private");
                     let is_static = modifiers.iter().any(|m| m == "static");
                     let is_final = modifiers.iter().any(|m| m == "final");
+
+                    // Determine visibility
+                    let visibility = if is_public {
+                        Some("public".to_string())
+                    } else if is_protected {
+                        Some("protected".to_string())
+                    } else if is_private {
+                        Some("private".to_string())
+                    } else {
+                        Some("package".to_string()) // Default package-private visibility in Java
+                    };
 
                     let mut properties = HashMap::new();
                     if is_static {
@@ -541,7 +676,7 @@ impl JavaHarness {
                         signature: None,
                         file_path: file_path.to_string(),
                         span: self.node_to_span(name_node),
-                        visibility: if is_public { Some("public".to_string()) } else { None },
+                        visibility,
                         doc: None,
                         sig_hash,
                     };
@@ -616,16 +751,73 @@ impl JavaHarness {
             span: self.node_to_span(name_node),
             token: name.clone(),
         });
+        
+        // Create canonical constructor for the record
+        // Records automatically have a public constructor with all components as parameters
+        context.push_class(name.clone());
+        let constructor_fqn = context.build_fqn(&name);
+        let constructor_sig_hash = format!("{:x}", md5::compute(&format!("{}({})", constructor_fqn, params.join(", "))));
+        
+        let constructor_symbol = SymbolIR {
+            id: format!("{}#{}_constructor", file_path, constructor_fqn),
+            lang: ProtoLanguage::Java,
+            kind: SymbolKind::Method,
+            name: name.clone(),
+            fqn: constructor_fqn,
+            signature: Some(format!("{}({})", name, params.join(", "))),
+            file_path: file_path.to_string(),
+            span: self.node_to_span(name_node),
+            visibility: if is_public { Some("public".to_string()) } else { None },
+            doc: None,
+            sig_hash: constructor_sig_hash,
+        };
+        
+        symbols.push(constructor_symbol);
+        
+        // Handle interfaces (implements clause)  
+        if let Some(interfaces) = node.child_by_field_name("interfaces") {
+            // The interfaces field contains a super_interfaces node
+            if interfaces.kind() == "super_interfaces" {
+                // Find the type_list child which contains the interface types
+                for child in interfaces.children(&mut interfaces.walk()) {
+                    if child.kind() == "type_list" {
+                        // Iterate through all interface types in the type_list
+                        for type_child in child.children(&mut child.walk()) {
+                            if type_child.kind() == "type_identifier" || type_child.kind() == "generic_type" || type_child.kind() == "scoped_type_identifier" {
+                                let interface_type = self.get_text(type_child, content);
+                                edges.push(EdgeIR {
+                                    edge_type: EdgeType::Implements,
+                                    src: Some(symbol.id.clone()),
+                                    dst: Some(interface_type),
+                                    file_src: Some(file_path.to_string()),
+                                    file_dst: None,
+                                    resolution: protocol::Resolution::Syntactic,
+                                    meta: HashMap::new(),
+                                    provenance: HashMap::new(),
+                                });
+                            }
+                        }
+                        break; // We found and processed the type_list
+                    }
+                }
+            }
+        }
 
         // Process record body (methods, compact constructor, etc)
-        context.push_class(name.clone());
         if let Some(body) = node.child_by_field_name("body") {
             for child in body.children(&mut body.walk()) {
                 match child.kind() {
-                    "method_declaration" | "compact_constructor_declaration" => {
+                    "method_declaration" => {
                         self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
                     }
-                    _ => {}
+                    "constructor_declaration" | "compact_constructor_declaration" => {
+                        // Handle explicit or compact constructor
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
+                    _ => {
+                        // Walk other nodes too
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
                 }
             }
         }
@@ -634,6 +826,47 @@ impl JavaHarness {
         Ok(())
     }
 
+    fn handle_annotation_usage(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        occurrences: &mut Vec<OccurrenceIR>,
+    ) -> Result<()> {
+        // Extract annotation name
+        let annotation_name = if let Some(name_node) = node.child_by_field_name("name") {
+            self.get_text(name_node, content)
+        } else {
+            // For marker annotations, get the identifier directly
+            for child in node.children(&mut node.walk()) {
+                if child.kind() == "identifier" {
+                    return Ok({
+                        let name = self.get_text(child, content);
+                        occurrences.push(OccurrenceIR {
+                            file_path: file_path.to_string(),
+                            symbol_id: Some(format!("@{}", name)),
+                            role: OccurrenceRole::Reference,
+                            span: self.node_to_span(child),
+                            token: format!("@{}", name),
+                        });
+                    });
+                }
+            }
+            return Ok(());
+        };
+        
+        // Create reference occurrence for the annotation
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(format!("@{}", annotation_name)),
+            role: OccurrenceRole::Reference,
+            span: self.node_to_span(node),
+            token: format!("@{}", annotation_name),
+        });
+        
+        Ok(())
+    }
+    
     fn handle_annotation(
         &self,
         node: Node,
@@ -670,12 +903,87 @@ impl JavaHarness {
 
         occurrences.push(OccurrenceIR {
             file_path: file_path.to_string(),
-            symbol_id: Some(symbol.id),
+            symbol_id: Some(symbol.id.clone()),
             role: OccurrenceRole::Definition,
             span: self.node_to_span(name_node),
-            token: name,
+            token: name.clone(),
         });
 
+        // Process annotation body for annotation methods (element declarations)
+        context.push_class(name.clone());
+        if let Some(body) = node.child_by_field_name("body") {
+            for child in body.children(&mut body.walk()) {
+                if child.kind() == "annotation_type_element_declaration" || 
+                   child.kind() == "method_declaration" ||
+                   child.kind() == "element_value_pair" {
+                    // Handle annotation method/element
+                    self.handle_annotation_method(child, content, file_path, symbols, occurrences, context)?;
+                } else {
+                    self.walk_node(child, content, file_path, symbols, &mut Vec::new(), occurrences, context)?;
+                }
+            }
+        }
+        context.pop_class();
+
+        Ok(())
+    }
+    
+    fn handle_annotation_method(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // Get method name
+        let name_node = node.child_by_field_name("name");
+        if let Some(name_node) = name_node {
+            let name = self.get_text(name_node, content);
+            let fqn = context.build_fqn(&name);
+            let sig_hash = format!("{:x}", md5::compute(&fqn));
+            
+            // Get return type if available
+            let return_type = node.child_by_field_name("type")
+                .map(|n| self.get_text(n, content))
+                .unwrap_or_else(|| "String".to_string());
+            
+            // Check for default value
+            let has_default = node.children(&mut node.walk())
+                .any(|child| child.kind() == "default" || child.kind() == "element_value");
+            
+            let signature = if has_default {
+                format!("{} {}() default ...", return_type, name)
+            } else {
+                format!("{} {}()", return_type, name)
+            };
+            
+            let symbol = SymbolIR {
+                id: format!("{}#{}", file_path, fqn),
+                lang: ProtoLanguage::Java,
+                kind: SymbolKind::Method,
+                name: name.clone(),
+                fqn,
+                signature: Some(signature),
+                file_path: file_path.to_string(),
+                span: self.node_to_span(name_node),
+                visibility: Some("public".to_string()), // Annotation methods are implicitly public
+                doc: None,
+                sig_hash,
+            };
+            
+            symbols.push(symbol.clone());
+            
+            occurrences.push(OccurrenceIR {
+                file_path: file_path.to_string(),
+                symbol_id: Some(symbol.id),
+                role: OccurrenceRole::Definition,
+                span: self.node_to_span(name_node),
+                token: name,
+            });
+        }
+        
         Ok(())
     }
 
@@ -713,10 +1021,268 @@ impl JavaHarness {
         Ok(())
     }
 
+    fn handle_lambda(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // Create a unique ID for the lambda
+        let lambda_id = format!("lambda_{}", node.start_position().row);
+        let fqn = context.build_fqn(&lambda_id);
+        let sig_hash = format!("{:x}", md5::compute(&fqn));
+        
+        // Extract parameters
+        let mut params = Vec::new();
+        if let Some(params_node) = node.child_by_field_name("parameters") {
+            for child in params_node.children(&mut params_node.walk()) {
+                if child.kind() == "identifier" || child.kind() == "formal_parameter" {
+                    params.push(self.get_text(child, content));
+                }
+            }
+        }
+        
+        // Build signature
+        let signature = format!("({}) -> {{...}}", params.join(", "));
+        
+        let symbol = SymbolIR {
+            id: format!("{}#{}", file_path, fqn),
+            lang: ProtoLanguage::Java,
+            kind: SymbolKind::Function, // Lambdas are anonymous functions
+            name: lambda_id.clone(),
+            fqn,
+            signature: Some(signature),
+            file_path: file_path.to_string(),
+            span: self.node_to_span(node),
+            visibility: None,
+            doc: None,
+            sig_hash,
+        };
+        
+        symbols.push(symbol.clone());
+        
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(symbol.id),
+            role: OccurrenceRole::Definition,
+            span: self.node_to_span(node),
+            token: lambda_id,
+        });
+        
+        // Walk the body to find any calls or references inside
+        if let Some(body) = node.child_by_field_name("body") {
+            self.walk_node(body, content, file_path, symbols, &mut Vec::new(), occurrences, context)?;
+        }
+        
+        Ok(())
+    }
+    
+    fn handle_method_reference(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        edges: &mut Vec<EdgeIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+    ) -> Result<()> {
+        // Method references like String::toUpperCase or System.out::println
+        let full_text = self.get_text(node, content);
+        let from_id = format!("{}#{}", file_path, self.get_file_fqn(file_path));
+        
+        // Split on :: to get the method name
+        let parts: Vec<&str> = full_text.split("::").collect();
+        if parts.len() == 2 {
+            let method_name = parts[1];
+            
+            edges.push(EdgeIR {
+                edge_type: EdgeType::Calls,
+                src: Some(from_id),
+                dst: Some(method_name.to_string()),
+                file_src: Some(file_path.to_string()),
+                file_dst: None,
+                resolution: protocol::Resolution::Syntactic,
+                meta: HashMap::new(),
+                provenance: HashMap::new(),
+            });
+            
+            occurrences.push(OccurrenceIR {
+                file_path: file_path.to_string(),
+                symbol_id: Some(full_text.clone()),
+                role: OccurrenceRole::Reference,
+                span: self.node_to_span(node),
+                token: full_text,
+            });
+        }
+        
+        Ok(())
+    }
+    
+    fn handle_static_initializer(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // Create a symbol for the static initializer block
+        let class_name = context.current_class().unwrap_or_else(|| "Unknown".to_string());
+        let block_id = format!("static_init_{}", node.start_position().row);
+        let fqn = context.build_fqn(&block_id);
+        let sig_hash = format!("{:x}", md5::compute(&fqn));
+        
+        let symbol = SymbolIR {
+            id: format!("{}#{}", file_path, fqn),
+            lang: ProtoLanguage::Java,
+            kind: SymbolKind::Method, // Static initializers are like special methods
+            name: format!("<clinit>"), // Java bytecode name for static initializer
+            fqn,
+            signature: Some("static {}".to_string()),
+            file_path: file_path.to_string(),
+            span: self.node_to_span(node),
+            visibility: None, // Static initializers have no visibility modifier
+            doc: None,
+            sig_hash,
+        };
+        
+        symbols.push(symbol.clone());
+        
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(symbol.id),
+            role: OccurrenceRole::Definition,
+            span: self.node_to_span(node),
+            token: "static".to_string(),
+        });
+        
+        // Walk the body to find any method calls or references
+        for child in node.children(&mut node.walk()) {
+            if child.kind() != "static" && child.kind() != "{" && child.kind() != "}" {
+                self.walk_node(child, content, file_path, symbols, &mut Vec::new(), occurrences, context)?;
+            }
+        }
+        
+        Ok(())
+    }
+    
+    fn handle_instance_initializer(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // Create a symbol for the instance initializer block
+        let class_name = context.current_class().unwrap_or_else(|| "Unknown".to_string());
+        let block_id = format!("instance_init_{}", node.start_position().row);
+        let fqn = context.build_fqn(&block_id);
+        let sig_hash = format!("{:x}", md5::compute(&fqn));
+        
+        let symbol = SymbolIR {
+            id: format!("{}#{}", file_path, fqn),
+            lang: ProtoLanguage::Java,
+            kind: SymbolKind::Method, // Instance initializers are like special methods
+            name: format!("<init>"), // Java bytecode name for instance initializer
+            fqn,
+            signature: Some("{}".to_string()),
+            file_path: file_path.to_string(),
+            span: self.node_to_span(node),
+            visibility: None, // Instance initializers have no visibility modifier
+            doc: None,
+            sig_hash,
+        };
+        
+        symbols.push(symbol.clone());
+        
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(symbol.id),
+            role: OccurrenceRole::Definition,
+            span: self.node_to_span(node),
+            token: "{".to_string(),
+        });
+        
+        // Walk the body
+        for child in node.children(&mut node.walk()) {
+            if child.kind() != "{" && child.kind() != "}" {
+                self.walk_node(child, content, file_path, symbols, &mut Vec::new(), occurrences, context)?;
+            }
+        }
+        
+        Ok(())
+    }
+
     // Helper methods
 
     fn get_text(&self, node: Node, content: &str) -> String {
         content[node.byte_range()].to_string()
+    }
+    
+    fn get_preceding_comment(&self, node: Node, content: &str) -> Option<String> {
+        // Look for a comment immediately before this node
+        if let Some(parent) = node.parent() {
+            let node_start = node.start_position().row;
+            
+            // Check siblings before this node
+            for i in 0..parent.child_count() {
+                if let Some(child) = parent.child(i) {
+                    // If we've reached our node, stop
+                    if child.id() == node.id() {
+                        break;
+                    }
+                    
+                    // Check if this is a comment that ends right before our node
+                    if child.kind() == "line_comment" || child.kind() == "block_comment" {
+                        let comment_end = child.end_position().row;
+                        // Comment should be on the line immediately before or same line
+                        if comment_end == node_start || comment_end == node_start - 1 {
+                            let comment_text = self.get_text(child, content);
+                            // Clean up the comment
+                            return Some(self.clean_comment(comment_text));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    fn clean_comment(&self, comment: String) -> String {
+        let comment = comment.trim();
+        
+        // Remove /** and */ for block comments
+        let comment = if comment.starts_with("/**") && comment.ends_with("*/") {
+            comment[3..comment.len()-2].trim().to_string()
+        } else if comment.starts_with("/*") && comment.ends_with("*/") {
+            comment[2..comment.len()-2].trim().to_string()
+        } else if comment.starts_with("//") {
+            comment[2..].trim().to_string()
+        } else {
+            comment.to_string()
+        };
+        
+        // Remove leading asterisks from each line (common in Javadoc)
+        comment.lines()
+            .map(|line| {
+                let line = line.trim();
+                if line.starts_with("* ") {
+                    &line[2..]
+                } else if line.starts_with("*") {
+                    &line[1..]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
     }
 
     fn node_to_span(&self, node: Node) -> Span {
@@ -746,6 +1312,35 @@ impl JavaHarness {
     fn get_method_signature(&self, node: Node, content: &str) -> String {
         let mut sig = String::new();
 
+        // Generic type parameters
+        if let Some(type_params_node) = node.child_by_field_name("type_parameters") {
+            sig.push('<');
+            let mut type_params = Vec::new();
+            for child in type_params_node.children(&mut type_params_node.walk()) {
+                if child.kind() == "type_parameter" {
+                    let mut param = String::new();
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        param = self.get_text(name_node, content);
+                    }
+                    // Check for bounds (extends clause)
+                    for bound_child in child.children(&mut child.walk()) {
+                        if bound_child.kind() == "type_bound" {
+                            param.push_str(" extends ");
+                            let bounds = bound_child.children(&mut bound_child.walk())
+                                .filter(|n| n.kind() != "extends")
+                                .map(|n| self.get_text(n, content))
+                                .collect::<Vec<_>>()
+                                .join(" & ");
+                            param.push_str(&bounds);
+                        }
+                    }
+                    type_params.push(param);
+                }
+            }
+            sig.push_str(&type_params.join(", "));
+            sig.push_str("> ");
+        }
+
         // Method name
         if let Some(name_node) = node.child_by_field_name("name") {
             sig.push_str(&self.get_text(name_node, content));
@@ -753,15 +1348,43 @@ impl JavaHarness {
             sig.push_str("<init>");
         }
 
-        // Parameters
+        // Parameters - extract just the types for signature
+        sig.push('(');
         if let Some(params_node) = node.child_by_field_name("parameters") {
-            sig.push_str(&self.get_text(params_node, content));
+            let mut param_types = Vec::new();
+            for child in params_node.children(&mut params_node.walk()) {
+                if child.kind() == "formal_parameter" || child.kind() == "spread_parameter" {
+                    // Get the type of the parameter
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        let param_type = self.get_text(type_node, content);
+                        if child.kind() == "spread_parameter" {
+                            param_types.push(format!("{}...", param_type));
+                        } else {
+                            param_types.push(param_type);
+                        }
+                    }
+                }
+            }
+            sig.push_str(&param_types.join(", "));
         }
+        sig.push(')');
 
         // Return type
         if let Some(type_node) = node.child_by_field_name("type") {
             sig.push_str(" : ");
             sig.push_str(&self.get_text(type_node, content));
+        }
+        
+        // Exception specifications (throws clause)
+        if let Some(throws_node) = node.child_by_field_name("throws") {
+            sig.push_str(" throws ");
+            let mut exceptions = Vec::new();
+            for child in throws_node.children(&mut throws_node.walk()) {
+                if child.kind() == "type_identifier" || child.kind() == "scoped_type_identifier" {
+                    exceptions.push(self.get_text(child, content));
+                }
+            }
+            sig.push_str(&exceptions.join(", "));
         }
 
         sig
@@ -831,6 +1454,8 @@ mod debug;
 mod edge_cases;
 #[cfg(test)]
 mod complex_tests;
+#[cfg(test)]
+mod strict_tests;
 
 #[cfg(test)]
 mod tests {
@@ -982,6 +1607,48 @@ public class OldClass {
         Ok(())
     }
 
+    #[test]
+    fn test_documentation_comments() -> Result<()> {
+        let mut harness = JavaHarness::new()?;
+        let source = r#"
+/**
+ * This is a test class
+ * with multiple lines
+ */
+public class TestClass {
+    /**
+     * This is a test method
+     * @param x the input value
+     * @return the result
+     */
+    public int testMethod(int x) {
+        return x * 2;
+    }
+    
+    // Single line comment
+    private String field;
+}
+"#;
+        
+        let (symbols, _, _) = harness.parse("test.java", source)?;
+        
+        // Find the class and check its doc
+        let test_class = symbols.iter().find(|s| s.name == "TestClass");
+        assert!(test_class.is_some());
+        let class_doc = test_class.unwrap().doc.as_ref();
+        assert!(class_doc.is_some());
+        assert!(class_doc.unwrap().contains("test class"));
+        
+        // Find the method and check its doc
+        let test_method = symbols.iter().find(|s| s.name == "testMethod");
+        assert!(test_method.is_some());
+        let method_doc = test_method.unwrap().doc.as_ref();
+        assert!(method_doc.is_some());
+        assert!(method_doc.unwrap().contains("test method"));
+        
+        Ok(())
+    }
+    
     #[test]
     fn test_parse_nested_classes() -> Result<()> {
         let mut harness = JavaHarness::new()?;

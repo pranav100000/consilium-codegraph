@@ -32,6 +32,9 @@ pub enum SymbolKind {
     Constant,
     Field,
     Property,
+    TypeAlias,
+    Typedef,
+    Union,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

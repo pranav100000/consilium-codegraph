@@ -9,6 +9,8 @@ mod debug;
 mod edge_cases;
 #[cfg(test)]
 mod complex_tests;
+#[cfg(test)]
+mod strict_tests;
 
 pub struct CppHarness {
     parser: Parser,
@@ -79,11 +81,20 @@ impl CppHarness {
             "struct_specifier" => {
                 self.handle_struct(node, content, file_path, symbols, edges, occurrences, context)?;
             }
+            "union_specifier" => {
+                self.handle_union(node, content, file_path, symbols, edges, occurrences, context)?;
+            }
             "enum_specifier" => {
                 self.handle_enum(node, content, file_path, symbols, edges, occurrences, context)?;
             }
             "namespace_definition" if self.is_cpp => {
                 self.handle_namespace(node, content, file_path, symbols, edges, occurrences, context)?;
+            }
+            "alias_declaration" if self.is_cpp => {
+                self.handle_alias_declaration(node, content, file_path, symbols, occurrences, context)?;
+            }
+            "using_declaration" if self.is_cpp => {
+                self.handle_using_declaration(node, content, file_path, symbols, occurrences, context)?;
             }
             "declaration" => {
                 // Handle global variables, typedefs, function declarations etc.
@@ -91,6 +102,12 @@ impl CppHarness {
             }
             "preproc_include" => {
                 self.handle_include(node, content, file_path, edges)?;
+            }
+            "preproc_def" | "preproc_function_def" => {
+                self.handle_macro_definition(node, content, file_path, symbols, occurrences)?;
+            }
+            "lambda_expression" => {
+                self.handle_lambda(node, content, file_path, symbols, occurrences, context)?;
             }
             _ => {
                 // Recursively walk children
@@ -116,28 +133,129 @@ impl CppHarness {
         let declarator = node.child_by_field_name("declarator")
             .context("Function without declarator")?;
         
-        let name = self.get_function_name(declarator, content)?;
-        let return_type = node.child_by_field_name("type")
-            .map(|n| self.get_text(n, content))
-            .unwrap_or_else(|| "void".to_string());
+        // Check if this is a friend function
+        let is_friend = node.children(&mut node.walk())
+            .any(|child| child.kind() == "friend" || self.get_text(child, content) == "friend");
+        
+        let name = if is_friend {
+            // For friend functions, be more lenient
+            self.get_function_name(declarator, content)
+                .unwrap_or_else(|_| {
+                    // Fallback for friend operator functions
+                    for child in declarator.children(&mut declarator.walk()) {
+                        if child.kind() == "operator_name" {
+                            return self.normalize_operator_name(&self.get_text(child, content));
+                        } else if child.kind() == "identifier" {
+                            return self.get_text(child, content);
+                        }
+                    }
+                    "unknown_friend".to_string()
+                })
+        } else {
+            self.get_function_name(declarator, content)?
+        };
+        
+        // Check if this is a constructor or destructor
+        let current_class = context.classes.last();
+        let is_constructor = current_class
+            .map(|class_name| name == *class_name)
+            .unwrap_or(false);
+        
+        let is_destructor = current_class
+            .map(|class_name| name == format!("~{}", class_name))
+            .unwrap_or(false) || name.starts_with('~');
+        
+        let (kind, return_type) = if is_constructor || is_destructor {
+            (SymbolKind::Method, String::new())
+        } else if current_class.is_some() {
+            // Method in class
+            let return_type = node.child_by_field_name("type")
+                .map(|n| self.get_text(n, content))
+                .unwrap_or_else(|| "void".to_string());
+            (SymbolKind::Method, return_type)
+        } else {
+            // Regular function
+            let return_type = node.child_by_field_name("type")
+                .map(|n| self.get_text(n, content))
+                .unwrap_or_else(|| "void".to_string());
+            (SymbolKind::Function, return_type)
+        };
         
         let fqn = context.build_fqn(&name);
         let sig_hash = format!("{:x}", md5::compute(&fqn));
         
         let params = self.get_function_params(declarator, content);
-        let signature = format!("{} {}({})", return_type, name, params.join(", "));
+        
+        // Check for virtual, override, and final specifiers
+        let mut is_virtual = false;
+        let mut is_override = false;
+        let mut is_final = false;
+        let mut is_pure_virtual = false;
+        
+        // Check for virtual specifier
+        for child in node.children(&mut node.walk()) {
+            if child.kind() == "virtual_specifier" || child.kind() == "virtual" {
+                let text = self.get_text(child, content);
+                if text == "virtual" {
+                    is_virtual = true;
+                } else if text == "override" {
+                    is_override = true;
+                } else if text == "final" {
+                    is_final = true;
+                }
+            }
+            // Check for pure virtual (= 0)
+            if child.kind() == "pure_virtual_specifier" || 
+               (child.kind() == "=" && node.child(child.id() + 1).map(|n| self.get_text(n, content) == "0").unwrap_or(false)) {
+                is_pure_virtual = true;
+                is_virtual = true;
+            }
+        }
+        
+        // Build signature with template parameters and specifiers
+        let mut signature = String::new();
+        
+        // Check for template parameters
+        let template_params = self.get_template_parameters(node, content);
+        if !template_params.is_empty() {
+            signature.push_str("template<");
+            signature.push_str(&template_params.join(", "));
+            signature.push_str("> ");
+        }
+        
+        if is_virtual && !is_override {
+            signature.push_str("virtual ");
+        }
+        
+        if is_constructor {
+            signature.push_str(&format!("{}({})", name, params.join(", ")));
+        } else if is_destructor {
+            signature.push_str(&format!("{}()", name));
+        } else {
+            signature.push_str(&format!("{} {}({})", return_type, name, params.join(", ")));
+        }
+        
+        if is_override {
+            signature.push_str(" override");
+        }
+        if is_final {
+            signature.push_str(" final");
+        }
+        if is_pure_virtual {
+            signature.push_str(" = 0");
+        }
         
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            kind: SymbolKind::Function,
+            kind,
             name: name.clone(),
             fqn: fqn.clone(),
             signature: Some(signature),
             file_path: file_path.to_string(),
             span: self.node_to_span(declarator),
-            visibility: None, // Will be set based on context
-            doc: None,
+            visibility: context.current_access.clone(),
+            doc: self.get_preceding_comment(node, content),
             sig_hash,
         };
         
@@ -177,13 +295,23 @@ impl CppHarness {
         let fqn = context.build_fqn(&name);
         let sig_hash = format!("{:x}", md5::compute(&fqn));
         
+        // Build signature with template parameters
+        let mut signature = String::new();
+        let template_params = self.get_template_parameters(node, content);
+        if !template_params.is_empty() {
+            signature.push_str("template<");
+            signature.push_str(&template_params.join(", "));
+            signature.push_str("> class ");
+            signature.push_str(&name);
+        }
+        
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Cpp,
             kind: SymbolKind::Class,
             name: name.clone(),
             fqn: fqn.clone(),
-            signature: None,
+            signature: if signature.is_empty() { None } else { Some(signature) },
             file_path: file_path.to_string(),
             span: self.node_to_span(name_node),
             visibility: None,
@@ -205,21 +333,34 @@ impl CppHarness {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 if child.kind() == "base_class_clause" {
-                    // The base class name is the last type_identifier in the clause
-                    for j in 0..child.child_count() {
-                        if let Some(subchild) = child.child(j) {
-                            if subchild.kind() == "type_identifier" || subchild.kind() == "qualified_identifier" {
-                                let base_name = self.get_text(subchild, content);
-                                edges.push(EdgeIR {
-                                    edge_type: EdgeType::Extends,
-                                    src: Some(symbol.id.clone()),
-                                    dst: Some(base_name),
-                                    file_src: Some(file_path.to_string()),
-                                    file_dst: None,
-                                    resolution: Resolution::Syntactic,
-                                    meta: HashMap::new(),
-                                    provenance: HashMap::new(),
-                                });
+                    // Process all base classes (handles multiple inheritance)
+                    // Walk through all children recursively to find type identifiers
+                    let mut stack = vec![child];
+                    while let Some(current) = stack.pop() {
+                        for j in 0..current.child_count() {
+                            if let Some(subchild) = current.child(j) {
+                                match subchild.kind() {
+                                    "type_identifier" | "qualified_identifier" => {
+                                        let base_name = self.get_text(subchild, content);
+                                        // Skip access specifiers like "public", "private", "protected"
+                                        if base_name != "public" && base_name != "private" && base_name != "protected" && base_name != "virtual" {
+                                            edges.push(EdgeIR {
+                                                edge_type: EdgeType::Extends,
+                                                src: Some(symbol.id.clone()),
+                                                dst: Some(base_name),
+                                                file_src: Some(file_path.to_string()),
+                                                file_dst: None,
+                                                resolution: Resolution::Syntactic,
+                                                meta: HashMap::new(),
+                                                provenance: HashMap::new(),
+                                            });
+                                        }
+                                    }
+                                    _ => {
+                                        // Push child to stack to process its children
+                                        stack.push(subchild);
+                                    }
+                                }
                             }
                         }
                     }
@@ -239,15 +380,29 @@ impl CppHarness {
                         self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
                     }
                     "field_declaration" => {
-                        // Handle class fields/member variables
-                        self.handle_field_declaration(child, content, file_path, symbols, occurrences, context)?;
+                        // Check if it's actually a nested class declaration
+                        let mut is_class_decl = false;
+                        for grandchild in child.children(&mut child.walk()) {
+                            if grandchild.kind() == "class_specifier" || grandchild.kind() == "struct_specifier" {
+                                is_class_decl = true;
+                                self.walk_node(grandchild, content, file_path, symbols, edges, occurrences, context)?;
+                                break;
+                            }
+                        }
+                        if !is_class_decl {
+                            // Handle class fields/member variables
+                            self.handle_field_declaration(child, content, file_path, symbols, occurrences, context)?;
+                        }
                     }
                     "access_specifier" => {
                         // Track public/private/protected sections
                         let access = self.get_text(child, content);
                         context.set_access(&access);
                     }
-                    _ => {}
+                    _ => {
+                        // Walk any other nodes to handle nested classes, etc
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
                 }
             }
         }
@@ -262,11 +417,11 @@ impl CppHarness {
         content: &str,
         file_path: &str,
         symbols: &mut Vec<SymbolIR>,
-        _edges: &mut Vec<EdgeIR>,
+        edges: &mut Vec<EdgeIR>,
         occurrences: &mut Vec<OccurrenceIR>,
         context: &mut ParseContext,
     ) -> Result<()> {
-        if let Some(name_node) = node.child_by_field_name("name") {
+        let name = if let Some(name_node) = node.child_by_field_name("name") {
             let name = self.get_text(name_node, content);
             let fqn = context.build_fqn(&name);
             let sig_hash = format!("{:x}", md5::compute(&fqn));
@@ -292,9 +447,99 @@ impl CppHarness {
                 symbol_id: Some(symbol.id.clone()),
                 role: OccurrenceRole::Definition,
                 span: self.node_to_span(name_node),
-                token: name,
+                token: name.clone(),
             });
+            
+            name
+        } else {
+            return Ok(());
+        };
+        
+        // Process struct body (similar to class)
+        context.push_class(name.clone());
+        context.set_access("public"); // Structs are public by default
+        
+        if let Some(body) = node.child_by_field_name("body") {
+            for child in body.children(&mut body.walk()) {
+                match child.kind() {
+                    "function_definition" => {
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
+                    "declaration" => {
+                        self.walk_node(child, content, file_path, symbols, edges, occurrences, context)?;
+                    }
+                    "field_declaration" => {
+                        self.handle_field_declaration(child, content, file_path, symbols, occurrences, context)?;
+                    }
+                    "access_specifier" if self.is_cpp => {
+                        let access = self.get_text(child, content);
+                        context.set_access(&access);
+                    }
+                    _ => {}
+                }
+            }
         }
+        context.pop_class();
+        
+        Ok(())
+    }
+
+    fn handle_union(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        edges: &mut Vec<EdgeIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        let name = if let Some(name_node) = node.child_by_field_name("name") {
+            let name = self.get_text(name_node, content);
+            let fqn = context.build_fqn(&name);
+            let sig_hash = format!("{:x}", md5::compute(&fqn));
+            
+            let symbol = SymbolIR {
+                id: format!("{}#{}", file_path, fqn),
+                lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
+                kind: SymbolKind::Union,
+                name: name.clone(),
+                fqn: fqn.clone(),
+                signature: None,
+                file_path: file_path.to_string(),
+                span: self.node_to_span(name_node),
+                visibility: None,
+                doc: None,
+                sig_hash,
+            };
+            
+            symbols.push(symbol.clone());
+            
+            occurrences.push(OccurrenceIR {
+                file_path: file_path.to_string(),
+                symbol_id: Some(symbol.id.clone()),
+                role: OccurrenceRole::Definition,
+                span: self.node_to_span(name_node),
+                token: name.clone(),
+            });
+            
+            name
+        } else {
+            return Ok(());
+        };
+        
+        // Process union body
+        context.push_class(name.clone());
+        context.set_access("public"); // Union members are public by default
+        
+        if let Some(body) = node.child_by_field_name("body") {
+            for child in body.children(&mut body.walk()) {
+                if child.kind() == "field_declaration" {
+                    self.handle_field_declaration(child, content, file_path, symbols, occurrences, context)?;
+                }
+            }
+        }
+        context.pop_class();
         
         Ok(())
     }
@@ -379,6 +624,89 @@ impl CppHarness {
         Ok(())
     }
 
+    fn handle_alias_declaration(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // using alias = type;
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = self.get_text(name_node, content);
+            let fqn = context.build_fqn(&name);
+            let sig_hash = format!("{:x}", md5::compute(&fqn));
+            
+            // Get the aliased type
+            let aliased_type = if let Some(type_node) = node.child_by_field_name("type") {
+                self.get_text(type_node, content)
+            } else {
+                "unknown".to_string()
+            };
+            
+            let symbol = SymbolIR {
+                id: format!("{}#{}", file_path, fqn),
+                lang: ProtoLanguage::Cpp,
+                kind: SymbolKind::TypeAlias,
+                name: name.clone(),
+                fqn: fqn.clone(),
+                signature: Some(format!("using {} = {}", name, aliased_type)),
+                file_path: file_path.to_string(),
+                span: self.node_to_span(name_node),
+                visibility: context.current_access.clone(),
+                doc: None,
+                sig_hash,
+            };
+            
+            symbols.push(symbol.clone());
+            
+            occurrences.push(OccurrenceIR {
+                file_path: file_path.to_string(),
+                symbol_id: Some(symbol.id),
+                role: OccurrenceRole::Definition,
+                span: self.node_to_span(name_node),
+                token: name,
+            });
+        }
+        
+        Ok(())
+    }
+    
+    fn handle_using_declaration(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // using namespace::name; or using typename Base::type;
+        // For now, just track it as a using declaration
+        let full_text = self.get_text(node, content);
+        
+        // Try to extract the name being imported
+        for child in node.children(&mut node.walk()) {
+            if child.kind() == "qualified_identifier" || child.kind() == "identifier" {
+                let name = self.get_text(child, content);
+                
+                // Create a reference occurrence for the imported symbol
+                occurrences.push(OccurrenceIR {
+                    file_path: file_path.to_string(),
+                    symbol_id: Some(name.clone()),
+                    role: OccurrenceRole::Reference,
+                    span: self.node_to_span(child),
+                    token: name,
+                });
+                break;
+            }
+        }
+        
+        Ok(())
+    }
+    
     fn handle_namespace(
         &self,
         node: Node,
@@ -389,12 +717,49 @@ impl CppHarness {
         occurrences: &mut Vec<OccurrenceIR>,
         context: &mut ParseContext,
     ) -> Result<()> {
-        let name = if let Some(name_node) = node.child_by_field_name("name") {
-            self.get_text(name_node, content)
+        let (name, name_node) = if let Some(name_node) = node.child_by_field_name("name") {
+            (self.get_text(name_node, content), Some(name_node))
         } else {
             // Anonymous namespace
-            "<anonymous>".to_string()
+            ("<anonymous>".to_string(), None)
         };
+        
+        // Create namespace symbol
+        let fqn = context.build_fqn(&name);
+        let sig_hash = format!("{:x}", md5::compute(&fqn));
+        
+        let symbol = SymbolIR {
+            id: format!("{}#{}", file_path, fqn),
+            lang: ProtoLanguage::Cpp,
+            kind: SymbolKind::Namespace,
+            name: name.clone(),
+            fqn: fqn.clone(),
+            signature: None,
+            file_path: file_path.to_string(),
+            span: if let Some(n) = name_node {
+                self.node_to_span(n)
+            } else {
+                self.node_to_span(node)
+            },
+            visibility: None,
+            doc: None,
+            sig_hash,
+        };
+        
+        symbols.push(symbol.clone());
+        
+        // Add occurrence for namespace definition
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(symbol.id),
+            role: OccurrenceRole::Definition,
+            span: if let Some(n) = name_node {
+                self.node_to_span(n)
+            } else {
+                self.node_to_span(node)
+            },
+            token: name.clone(),
+        });
         
         context.push_namespace(name.clone());
         
@@ -419,11 +784,88 @@ impl CppHarness {
         occurrences: &mut Vec<OccurrenceIR>,
         context: &mut ParseContext,
     ) -> Result<()> {
+        // Check for typedef
+        let mut is_typedef = false;
+        for child in node.children(&mut node.walk()) {
+            if child.kind() == "storage_class_specifier" {
+                let text = self.get_text(child, content);
+                if text == "typedef" {
+                    is_typedef = true;
+                    break;
+                }
+            }
+        }
+        
+        if is_typedef {
+            // Handle typedef declaration
+            if let Some(declarator) = node.child_by_field_name("declarator") {
+                let name = self.extract_declarator_name(declarator, content);
+                if let Some(name) = name {
+                    let fqn = context.build_fqn(&name);
+                    let sig_hash = format!("{:x}", md5::compute(&fqn));
+                    
+                    // Get the type being aliased
+                    let aliased_type = if let Some(type_node) = node.child_by_field_name("type") {
+                        self.get_text(type_node, content)
+                    } else {
+                        "unknown".to_string()
+                    };
+                    
+                    let symbol = SymbolIR {
+                        id: format!("{}#{}", file_path, fqn),
+                        lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
+                        kind: SymbolKind::Typedef,
+                        name: name.clone(),
+                        fqn: fqn.clone(),
+                        signature: Some(format!("typedef {} {}", aliased_type, name)),
+                        file_path: file_path.to_string(),
+                        span: self.node_to_span(declarator),
+                        visibility: context.current_access.clone(),
+                        doc: None,
+                        sig_hash,
+                    };
+                    
+                    symbols.push(symbol.clone());
+                    
+                    occurrences.push(OccurrenceIR {
+                        file_path: file_path.to_string(),
+                        symbol_id: Some(symbol.id),
+                        role: OccurrenceRole::Definition,
+                        span: self.node_to_span(declarator),
+                        token: name,
+                    });
+                    
+                    return Ok(());
+                }
+            }
+        }
+        
+        // Check if this is a friend declaration
+        let is_friend = node.children(&mut node.walk())
+            .any(|child| child.kind() == "friend" || self.get_text(child, content) == "friend");
+        
         // Check if this is a function declaration (prototype)
         if let Some(declarator) = node.child_by_field_name("declarator") {
             if declarator.kind() == "function_declarator" {
                 // This is a function declaration
-                let name = self.get_function_name(declarator, content)?;
+                // For friend declarations, be more lenient with name extraction
+                let name = if is_friend {
+                    // Try to extract name from friend declaration
+                    self.get_function_name(declarator, content)
+                        .unwrap_or_else(|_| {
+                            // Fallback: try to find operator_name or identifier
+                            for child in declarator.children(&mut declarator.walk()) {
+                                if child.kind() == "operator_name" {
+                                    return self.normalize_operator_name(&self.get_text(child, content));
+                                } else if child.kind() == "identifier" {
+                                    return self.get_text(child, content);
+                                }
+                            }
+                            "unknown_friend".to_string()
+                        })
+                } else {
+                    self.get_function_name(declarator, content)?
+                };
                 let return_type = node.child_by_field_name("type")
                     .map(|n| self.get_text(n, content))
                     .unwrap_or_else(|| "void".to_string());
@@ -432,7 +874,11 @@ impl CppHarness {
                 let sig_hash = format!("{:x}", md5::compute(&fqn));
                 
                 let params = self.get_function_params(declarator, content);
-                let signature = format!("{} {}({})", return_type, name, params.join(", "));
+                let signature = if is_friend {
+                    format!("friend {} {}({})", return_type, name, params.join(", "))
+                } else {
+                    format!("{} {}({})", return_type, name, params.join(", "))
+                };
                 
                 let symbol = SymbolIR {
                     id: format!("{}#{}", file_path, fqn),
@@ -512,38 +958,55 @@ impl CppHarness {
     ) -> Result<()> {
         // Get the field declarator
         if let Some(declarator) = node.child_by_field_name("declarator") {
-            let name = self.get_text(declarator, content);
-            let fqn = context.build_fqn(&name);
-            let sig_hash = format!("{:x}", md5::compute(&fqn));
+            // Check if this is a function declarator (method declaration)
+            // Function declarators have a "parameters" field
+            let is_function = declarator.kind() == "function_declarator" || 
+                              declarator.child_by_field_name("parameters").is_some();
             
-            // Get the type
-            let field_type = node.child_by_field_name("type")
-                .map(|n| self.get_text(n, content))
-                .unwrap_or_else(|| "unknown".to_string());
-            
-            let symbol = SymbolIR {
-                id: format!("{}#{}", file_path, fqn),
-                lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-                kind: SymbolKind::Field,
-                name: name.clone(),
-                fqn: fqn.clone(),
-                signature: Some(format!("{} {}", field_type, name)),
-                file_path: file_path.to_string(),
-                span: self.node_to_span(declarator),
-                visibility: context.current_access.clone(),
-                doc: None,
-                sig_hash,
-            };
-            
-            symbols.push(symbol.clone());
-            
-            occurrences.push(OccurrenceIR {
-                file_path: file_path.to_string(),
-                symbol_id: Some(symbol.id),
-                role: OccurrenceRole::Definition,
-                span: self.node_to_span(declarator),
-                token: name,
-            });
+            if is_function {
+                // This is a method declaration, not a field
+                // Handle it as a function/method declaration
+                self.handle_function(node, content, file_path, symbols, &mut Vec::new(), occurrences, context)?;
+            } else {
+                // This is an actual field
+                let name = if let Some(extracted) = self.extract_declarator_name(declarator, content) {
+                    extracted
+                } else {
+                    self.get_text(declarator, content)
+                };
+                
+                let fqn = context.build_fqn(&name);
+                let sig_hash = format!("{:x}", md5::compute(&fqn));
+                
+                // Get the type
+                let field_type = node.child_by_field_name("type")
+                    .map(|n| self.get_text(n, content))
+                    .unwrap_or_else(|| "unknown".to_string());
+                
+                let symbol = SymbolIR {
+                    id: format!("{}#{}", file_path, fqn),
+                    lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
+                    kind: SymbolKind::Field,
+                    name: name.clone(),
+                    fqn: fqn.clone(),
+                    signature: Some(format!("{} {}", field_type, name)),
+                    file_path: file_path.to_string(),
+                    span: self.node_to_span(declarator),
+                    visibility: context.current_access.clone(),
+                    doc: None,
+                    sig_hash,
+                };
+                
+                symbols.push(symbol.clone());
+                
+                occurrences.push(OccurrenceIR {
+                    file_path: file_path.to_string(),
+                    symbol_id: Some(symbol.id),
+                    role: OccurrenceRole::Definition,
+                    span: self.node_to_span(declarator),
+                    token: name,
+                });
+            }
         }
         
         Ok(())
@@ -570,6 +1033,75 @@ impl CppHarness {
                 resolution: Resolution::Syntactic,
                 meta: HashMap::new(),
                 provenance: HashMap::new(),
+            });
+        }
+        
+        Ok(())
+    }
+    
+    fn handle_macro_definition(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+    ) -> Result<()> {
+        // Get the macro name
+        if let Some(name_node) = node.child_by_field_name("name") {
+            let name = self.get_text(name_node, content);
+            let fqn = name.clone(); // Macros are global
+            let sig_hash = format!("{:x}", md5::compute(&fqn));
+            
+            // Check if it's a function-like macro
+            let is_function_macro = node.kind() == "preproc_function_def";
+            
+            // Build signature
+            let mut signature = String::new();
+            if is_function_macro {
+                signature.push_str("#define ");
+                signature.push_str(&name);
+                // Get parameters if any
+                if let Some(params_node) = node.child_by_field_name("parameters") {
+                    let params_text = self.get_text(params_node, content);
+                    signature.push_str(&params_text);
+                }
+                signature.push_str(" ...");
+            } else {
+                signature.push_str("#define ");
+                signature.push_str(&name);
+                // Get the value if present
+                if let Some(value_node) = node.child_by_field_name("value") {
+                    let value = self.get_text(value_node, content);
+                    if !value.is_empty() {
+                        signature.push(' ');
+                        signature.push_str(&value.trim());
+                    }
+                }
+            }
+            
+            let symbol = SymbolIR {
+                id: format!("{}#{}", file_path, fqn),
+                lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
+                kind: SymbolKind::Constant, // Macros are like constants
+                name: name.clone(),
+                fqn,
+                signature: Some(signature),
+                file_path: file_path.to_string(),
+                span: self.node_to_span(name_node),
+                visibility: None, // Macros don't have visibility modifiers
+                doc: self.get_preceding_comment(node, content),
+                sig_hash,
+            };
+            
+            symbols.push(symbol.clone());
+            
+            occurrences.push(OccurrenceIR {
+                file_path: file_path.to_string(),
+                symbol_id: Some(symbol.id),
+                role: OccurrenceRole::Definition,
+                span: self.node_to_span(name_node),
+                token: name,
             });
         }
         
@@ -622,12 +1154,59 @@ impl CppHarness {
         Ok(())
     }
 
-    fn get_function_name(&self, declarator: Node, content: &str) -> Result<String> {
-        // Handle different declarator types (pointer, reference, etc.)
+    fn extract_declarator_name(&self, declarator: Node, content: &str) -> Option<String> {
+        // Similar to get_function_name but returns Option
         let mut current = declarator;
         loop {
             match current.kind() {
+                "function_declarator" | "array_declarator" | "parenthesized_declarator" => {
+                    if let Some(decl) = current.child_by_field_name("declarator") {
+                        current = decl;
+                    } else {
+                        break;
+                    }
+                }
+                "pointer_declarator" | "reference_declarator" => {
+                    if let Some(decl) = current.child_by_field_name("declarator") {
+                        current = decl;
+                    } else {
+                        break;
+                    }
+                }
+                "identifier" => {
+                    return Some(self.get_text(current, content));
+                }
+                "destructor_name" => {
+                    return Some(self.get_text(current, content));
+                }
+                "operator_name" => {
+                    let op_text = self.get_text(current, content);
+                    return Some(self.normalize_operator_name(&op_text));
+                }
+                _ => break,
+            }
+        }
+        None
+    }
+    
+    fn get_function_name(&self, declarator: Node, content: &str) -> Result<String> {
+        // Handle different declarator types (pointer, reference, etc.)
+        let mut current = declarator;
+        
+        // First pass: follow declarator chain
+        loop {
+            match current.kind() {
                 "function_declarator" => {
+                    // For function declarator, first check if it directly contains operator_name
+                    for i in 0..current.child_count() {
+                        if let Some(child) = current.child(i) {
+                            if child.kind() == "operator_name" {
+                                let op_text = self.get_text(child, content);
+                                return Ok(self.normalize_operator_name(&op_text));
+                            }
+                        }
+                    }
+                    // Otherwise follow the declarator chain
                     if let Some(decl) = current.child_by_field_name("declarator") {
                         current = decl;
                     } else {
@@ -647,10 +1226,33 @@ impl CppHarness {
                 "field_identifier" => {
                     return Ok(self.get_text(current, content));
                 }
-                "destructor_name" | "qualified_identifier" => {
+                "destructor_name" => {
                     return Ok(self.get_text(current, content));
                 }
-                _ => break,
+                "qualified_identifier" => {
+                    // Handle qualified operators like std::operator<<
+                    let text = self.get_text(current, content);
+                    if text.contains("operator") {
+                        return Ok(self.normalize_operator_name(&text));
+                    }
+                    return Ok(text);
+                }
+                "operator_name" => {
+                    let op_text = self.get_text(current, content);
+                    return Ok(self.normalize_operator_name(&op_text));
+                }
+                _ => {
+                    // For unknown node types, check all children for operator_name
+                    for i in 0..current.child_count() {
+                        if let Some(child) = current.child(i) {
+                            if child.kind() == "operator_name" {
+                                let op_text = self.get_text(child, content);
+                                return Ok(self.normalize_operator_name(&op_text));
+                            }
+                        }
+                    }
+                    break;
+                }
             }
         }
         
@@ -705,8 +1307,239 @@ impl CppHarness {
         }
     }
 
+    fn handle_lambda(
+        &self,
+        node: Node,
+        content: &str,
+        file_path: &str,
+        symbols: &mut Vec<SymbolIR>,
+        occurrences: &mut Vec<OccurrenceIR>,
+        context: &mut ParseContext,
+    ) -> Result<()> {
+        // Create a unique ID for the lambda
+        let lambda_id = format!("lambda_{}_{}",
+            node.start_position().row,
+            node.start_position().column);
+        let fqn = context.build_fqn(&lambda_id);
+        let sig_hash = format!("{:x}", md5::compute(&fqn));
+        
+        // Build signature from captures and parameters
+        let mut signature = String::new();
+        
+        // Handle capture clause [&] or [=] or [this] etc
+        if let Some(captures) = node.child_by_field_name("captures") {
+            let capture_text = self.get_text(captures, content);
+            signature.push_str(&capture_text);
+        }
+        
+        // Handle parameters
+        signature.push('(');
+        if let Some(params) = node.child_by_field_name("declarator") {
+            if let Some(params_list) = params.child_by_field_name("parameters") {
+                let mut param_strs = Vec::new();
+                for child in params_list.children(&mut params_list.walk()) {
+                    if child.kind() == "parameter_declaration" {
+                        param_strs.push(self.get_text(child, content));
+                    }
+                }
+                signature.push_str(&param_strs.join(", "));
+            }
+        }
+        signature.push_str(") {...}");
+        
+        let symbol = SymbolIR {
+            id: format!("{}#{}", file_path, fqn),
+            lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
+            kind: SymbolKind::Function, // Lambdas are anonymous functions
+            name: lambda_id.clone(),
+            fqn,
+            signature: Some(signature),
+            file_path: file_path.to_string(),
+            span: self.node_to_span(node),
+            visibility: None,
+            doc: None,
+            sig_hash,
+        };
+        
+        symbols.push(symbol.clone());
+        
+        occurrences.push(OccurrenceIR {
+            file_path: file_path.to_string(),
+            symbol_id: Some(symbol.id),
+            role: OccurrenceRole::Definition,
+            span: self.node_to_span(node),
+            token: lambda_id,
+        });
+        
+        // Walk the body to find any calls or references inside
+        if let Some(body) = node.child_by_field_name("body") {
+            self.walk_node(body, content, file_path, symbols, &mut Vec::new(), occurrences, context)?;
+        }
+        
+        Ok(())
+    }
+    
+    fn get_template_parameters(&self, node: Node, content: &str) -> Vec<String> {
+        let mut params = Vec::new();
+        
+        // Look for template_declaration parent
+        if let Some(parent) = node.parent() {
+            if parent.kind() == "template_declaration" {
+                if let Some(params_node) = parent.child_by_field_name("parameters") {
+                    for child in params_node.children(&mut params_node.walk()) {
+                        match child.kind() {
+                            "type_parameter_declaration" => {
+                                let mut param = String::new();
+                                // Check for typename or class keyword
+                                for grandchild in child.children(&mut child.walk()) {
+                                    if grandchild.kind() == "typename" || grandchild.kind() == "class" {
+                                        param.push_str(&self.get_text(grandchild, content));
+                                        param.push(' ');
+                                    } else if grandchild.kind() == "type_identifier" {
+                                        param.push_str(&self.get_text(grandchild, content));
+                                    }
+                                }
+                                if !param.is_empty() {
+                                    params.push(param.trim().to_string());
+                                }
+                            }
+                            "variadic_type_parameter_declaration" => {
+                                let param = self.get_text(child, content);
+                                params.push(param);
+                            }
+                            "optional_type_parameter_declaration" => {
+                                let param = self.get_text(child, content);
+                                params.push(param);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        
+        params
+    }
+    
+    fn normalize_operator_name(&self, op: &str) -> String {
+        // Normalize operator names to a consistent format
+        // This helps with symbol resolution and matching
+        let normalized = op.trim()
+            .replace("operator ", "operator")
+            .replace("operator\t", "operator")
+            .replace("  ", " ");
+        
+        // Map common operators to standard names
+        match normalized.as_str() {
+            "operator+" => "operator+".to_string(),
+            "operator-" => "operator-".to_string(),
+            "operator*" => "operator*".to_string(),
+            "operator/" => "operator/".to_string(),
+            "operator%" => "operator%".to_string(),
+            "operator==" => "operator==".to_string(),
+            "operator!=" => "operator!=".to_string(),
+            "operator<" => "operator<".to_string(),
+            "operator>" => "operator>".to_string(),
+            "operator<=" => "operator<=".to_string(),
+            "operator>=" => "operator>=".to_string(),
+            "operator&&" => "operator&&".to_string(),
+            "operator||" => "operator||".to_string(),
+            "operator!" => "operator!".to_string(),
+            "operator&" => "operator&".to_string(),
+            "operator|" => "operator|".to_string(),
+            "operator^" => "operator^".to_string(),
+            "operator~" => "operator~".to_string(),
+            "operator<<" => "operator<<".to_string(),
+            "operator>>" => "operator>>".to_string(),
+            "operator=" => "operator=".to_string(),
+            "operator+=" => "operator+=".to_string(),
+            "operator-=" => "operator-=".to_string(),
+            "operator*=" => "operator*=".to_string(),
+            "operator/=" => "operator/=".to_string(),
+            "operator%=" => "operator%=".to_string(),
+            "operator&=" => "operator&=".to_string(),
+            "operator|=" => "operator|=".to_string(),
+            "operator^=" => "operator^=".to_string(),
+            "operator<<=" => "operator<<=".to_string(),
+            "operator>>=" => "operator>>=".to_string(),
+            "operator++" => "operator++".to_string(),
+            "operator--" => "operator--".to_string(),
+            "operator->" => "operator->".to_string(),
+            "operator->*" => "operator->*".to_string(),
+            "operator()" => "operator()".to_string(),
+            "operator[]" => "operator[]".to_string(),
+            "operator new" => "operator new".to_string(),
+            "operator new[]" => "operator new[]".to_string(),
+            "operator delete" => "operator delete".to_string(),
+            "operator delete[]" => "operator delete[]".to_string(),
+            "operator," => "operator,".to_string(),
+            _ => normalized
+        }
+    }
+    
     fn get_text(&self, node: Node, content: &str) -> String {
         content[node.byte_range()].to_string()
+    }
+    
+    fn get_preceding_comment(&self, node: Node, content: &str) -> Option<String> {
+        // Look for a comment immediately before this node
+        if let Some(parent) = node.parent() {
+            let node_start = node.start_position().row;
+            
+            // Check siblings before this node
+            for i in 0..parent.child_count() {
+                if let Some(child) = parent.child(i) {
+                    // If we've reached our node, stop
+                    if child.id() == node.id() {
+                        break;
+                    }
+                    
+                    // Check if this is a comment that ends right before our node
+                    if child.kind() == "comment" {
+                        let comment_end = child.end_position().row;
+                        // Comment should be on the line immediately before or same line
+                        if comment_end == node_start || comment_end == node_start - 1 {
+                            let comment_text = self.get_text(child, content);
+                            // Clean up the comment
+                            return Some(self.clean_comment(comment_text));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    fn clean_comment(&self, comment: String) -> String {
+        let comment = comment.trim();
+        
+        // Remove /** and */ for block comments
+        let comment = if comment.starts_with("/**") && comment.ends_with("*/") {
+            comment[3..comment.len()-2].trim().to_string()
+        } else if comment.starts_with("/*") && comment.ends_with("*/") {
+            comment[2..comment.len()-2].trim().to_string()
+        } else if comment.starts_with("//") {
+            comment[2..].trim().to_string()
+        } else {
+            comment.to_string()
+        };
+        
+        // Remove leading asterisks from each line (common in Doxygen)
+        comment.lines()
+            .map(|line| {
+                let line = line.trim();
+                if line.starts_with("* ") {
+                    &line[2..]
+                } else if line.starts_with("*") {
+                    &line[1..]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
     }
 
     fn node_to_span(&self, node: Node) -> Span {
@@ -944,6 +1777,38 @@ namespace math {
         Ok(())
     }
 
+    #[test]
+    fn test_parse_nested_classes() -> Result<()> {
+        let mut harness = CppHarness::new_cpp()?;
+        let source = r#"
+class Outer {
+public:
+    class Inner {
+    public:
+        void innerMethod() {}
+    };
+    
+    void outerMethod() {}
+};
+"#;
+        
+        let (symbols, _edges, _occurrences) = harness.parse("test.cpp", source)?;
+        
+        // Check that both classes exist
+        assert!(symbols.iter().any(|s| s.name == "Outer" && s.kind == SymbolKind::Class));
+        assert!(symbols.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Class));
+        
+        // Check that Inner has correct FQN
+        let inner = symbols.iter().find(|s| s.name == "Inner").unwrap();
+        assert_eq!(inner.fqn, "Outer::Inner");
+        
+        // Check that innerMethod has correct FQN
+        let inner_method = symbols.iter().find(|s| s.name == "innerMethod").unwrap();
+        assert_eq!(inner_method.fqn, "Outer::Inner::innerMethod");
+        
+        Ok(())
+    }
+    
     #[test]
     fn test_parse_includes() -> Result<()> {
         let mut harness = CppHarness::new_c()?;
