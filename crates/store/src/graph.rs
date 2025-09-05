@@ -10,6 +10,12 @@ pub struct CodeGraph {
     node_to_symbol: HashMap<NodeIndex, String>,
 }
 
+impl Default for CodeGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodeGraph {
     pub fn new() -> Self {
         Self {
@@ -81,8 +87,8 @@ impl CodeGraph {
                 if depth < max_depth {
                     // Get incoming edges (callers)
                     for neighbor in self.graph.neighbors_directed(current, petgraph::Direction::Incoming) {
-                        if !visited.contains_key(&neighbor) {
-                            visited.insert(neighbor, depth + 1);
+                        if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(neighbor) {
+                            e.insert(depth + 1);
                             queue.push((neighbor, depth + 1));
                         }
                     }
@@ -113,8 +119,8 @@ impl CodeGraph {
                 if depth < max_depth {
                     // Get outgoing edges (callees)
                     for neighbor in self.graph.neighbors_directed(current, petgraph::Direction::Outgoing) {
-                        if !visited.contains_key(&neighbor) {
-                            visited.insert(neighbor, depth + 1);
+                        if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(neighbor) {
+                            e.insert(depth + 1);
                             queue.push((neighbor, depth + 1));
                         }
                     }

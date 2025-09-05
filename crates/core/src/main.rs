@@ -531,7 +531,7 @@ fn get_current_commit(repo_root: &PathBuf) -> Result<String> {
 
 fn get_changed_files(repo_root: &PathBuf, from_commit: &str, to_commit: &str) -> Result<Vec<String>> {
     let output = std::process::Command::new("git")
-        .args(&["diff", "--name-only", &format!("{}..{}", from_commit, to_commit)])
+        .args(["diff", "--name-only", &format!("{}..{}", from_commit, to_commit)])
         .current_dir(repo_root)
         .output()?;
     

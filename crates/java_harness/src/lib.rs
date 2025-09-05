@@ -163,13 +163,7 @@ impl JavaHarness {
                 provenance: HashMap::new(),
             });
 
-            occurrences.push(OccurrenceIR {
-                file_path: file_path.to_string(),
-                symbol_id: Some(import_path),
-                role: OccurrenceRole::Reference,
-                span: self.node_to_span(node),
-                token: self.get_text(node, content),
-            });
+            // Don't create occurrences for imports - they're not symbols
         }
         Ok(())
     }
@@ -389,11 +383,11 @@ impl JavaHarness {
         });
 
         // Handle extended interfaces (interface A extends B, C)
-        if let Some(extends_list) = node.child_by_field_name("super_interfaces") {
-            // Find type_list which contains the extended interface types
-            for child in extends_list.children(&mut extends_list.walk()) {
-                if child.kind() == "type_list" {
-                    // Iterate through all extended interfaces in the type_list
+        // Look for extends_interfaces child node
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i) {
+                if child.kind() == "extends_interfaces" {
+                    // Found the extends clause
                     for type_child in child.children(&mut child.walk()) {
                         if type_child.kind() == "type_identifier" || type_child.kind() == "scoped_type_identifier" {
                             let extended_interface = self.get_text(type_child, content);
@@ -407,6 +401,23 @@ impl JavaHarness {
                                 meta: HashMap::new(),
                                 provenance: HashMap::new(),
                             });
+                        } else if type_child.kind() == "type_list" {
+                            // Sometimes the interfaces are in a type_list
+                            for interface_node in type_child.children(&mut type_child.walk()) {
+                                if interface_node.kind() == "type_identifier" || interface_node.kind() == "scoped_type_identifier" {
+                                    let extended_interface = self.get_text(interface_node, content);
+                                    edges.push(EdgeIR {
+                                        edge_type: EdgeType::Extends,
+                                        src: Some(symbol.id.clone()),
+                                        dst: Some(extended_interface),
+                                        file_src: Some(file_path.to_string()),
+                                        file_dst: None,
+                                        resolution: protocol::Resolution::Syntactic,
+                                        meta: HashMap::new(),
+                                        provenance: HashMap::new(),
+                                    });
+                                }
+                            }
                         }
                     }
                     break;
@@ -548,7 +559,7 @@ impl JavaHarness {
 
         let fqn = context.build_fqn(&name);
         let signature = self.get_method_signature(node, content);
-        let sig_hash = format!("{:x}", md5::compute(&format!("{}{}", fqn, signature)));
+        let sig_hash = format!("{:x}", md5::compute(format!("{}{}", fqn, signature)));
 
         let modifiers = self.get_modifiers(node, content);
         let is_public = modifiers.iter().any(|m| m == "public");
@@ -756,7 +767,7 @@ impl JavaHarness {
         // Records automatically have a public constructor with all components as parameters
         context.push_class(name.clone());
         let constructor_fqn = context.build_fqn(&name);
-        let constructor_sig_hash = format!("{:x}", md5::compute(&format!("{}({})", constructor_fqn, params.join(", "))));
+        let constructor_sig_hash = format!("{:x}", md5::compute(format!("{}({})", constructor_fqn, params.join(", "))));
         
         let constructor_symbol = SymbolIR {
             id: format!("{}#{}_constructor", file_path, constructor_fqn),
@@ -1139,7 +1150,7 @@ impl JavaHarness {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
             kind: SymbolKind::Method, // Static initializers are like special methods
-            name: format!("<clinit>"), // Java bytecode name for static initializer
+            name: "<clinit>".to_string(), // Java bytecode name for static initializer
             fqn,
             signature: Some("static {}".to_string()),
             file_path: file_path.to_string(),
@@ -1188,7 +1199,7 @@ impl JavaHarness {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
             kind: SymbolKind::Method, // Instance initializers are like special methods
-            name: format!("<init>"), // Java bytecode name for instance initializer
+            name: "<init>".to_string(), // Java bytecode name for instance initializer
             fqn,
             signature: Some("{}".to_string()),
             file_path: file_path.to_string(),
@@ -1527,9 +1538,9 @@ public enum Color {
         let (symbols, _, _) = harness.parse("Color.java", content)?;
 
         assert!(symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
-        assert!(symbols.iter().any(|s| s.name == "RED" && s.kind == SymbolKind::Constant));
-        assert!(symbols.iter().any(|s| s.name == "GREEN" && s.kind == SymbolKind::Constant));
-        assert!(symbols.iter().any(|s| s.name == "BLUE" && s.kind == SymbolKind::Constant));
+        assert!(symbols.iter().any(|s| s.name == "RED" && s.kind == SymbolKind::EnumMember));
+        assert!(symbols.iter().any(|s| s.name == "GREEN" && s.kind == SymbolKind::EnumMember));
+        assert!(symbols.iter().any(|s| s.name == "BLUE" && s.kind == SymbolKind::EnumMember));
         assert!(symbols.iter().any(|s| s.name == "hex" && s.kind == SymbolKind::Field));
         assert!(symbols.iter().any(|s| s.name == "getHex" && s.kind == SymbolKind::Method));
 
@@ -1574,10 +1585,14 @@ public class Test {
 }
 "#;
 
-        let (_, edges, occurrences) = harness.parse("Test.java", content)?;
+        let (symbols, edges, occurrences) = harness.parse("Test.java", content)?;
 
         assert!(edges.iter().any(|e| e.edge_type == EdgeType::Imports));
-        assert!(occurrences.iter().any(|o| o.role == OccurrenceRole::Reference));
+        // Import statements don't create occurrences - they're just edges
+        // Only the Test class should create an occurrence
+        assert_eq!(occurrences.len(), 1);
+        assert!(occurrences[0].token == "Test");
+        assert_eq!(occurrences[0].role, OccurrenceRole::Definition);
 
         Ok(())
     }

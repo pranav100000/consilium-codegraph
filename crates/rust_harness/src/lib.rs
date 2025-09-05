@@ -197,11 +197,10 @@ impl RustHarness {
         let name = self.get_text(name_node, content);
 
         // Skip test functions in test modules
-        if name.starts_with("test_") || name == "it_works" {
-            if self.find_attribute(node, "test", content).is_some() {
+        if (name.starts_with("test_") || name == "it_works")
+            && self.find_attribute(node, "test", content).is_some() {
                 return Ok(());
             }
-        }
 
         let fqn = self.build_fqn(module_stack, impl_type, &name);
         

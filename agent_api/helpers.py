@@ -513,11 +513,16 @@ class AgentHelpers:
     
     def _handles_user_input(self, symbol: str) -> bool:
         """Check if symbol handles user input"""
+        input_keywords = ["request", "input", "param", "arg", "query", "body", "form"]
+        
+        # First check the symbol name directly (for when called without graph lookup)
+        if any(keyword in symbol.lower() for keyword in input_keywords):
+            return True
+        
+        # Then try to get from graph if it exists
         sym = self.graph.get_symbol(symbol)
         if not sym:
             return False
-        
-        input_keywords = ["request", "input", "param", "arg", "query", "body", "form"]
         
         # Check name
         if any(keyword in sym.name.lower() for keyword in input_keywords):
@@ -548,9 +553,12 @@ class AgentHelpers:
         """Check if symbol performs authentication"""
         sym = self.graph.get_symbol(symbol)
         if not sym:
-            return False
+            # Check symbol name directly
+            auth_keywords = ["auth", "login", "verify_token", "authenticate", "signin", "signout"]
+            return any(keyword in symbol.lower() for keyword in auth_keywords)
         
-        auth_keywords = ["auth", "login", "verify", "token", "permission", "role"]
+        # More specific auth keywords (not permission which is authorization)
+        auth_keywords = ["auth", "login", "verify_token", "authenticate", "signin", "signout"]
         
         return any(keyword in sym.name.lower() for keyword in auth_keywords)
     
@@ -596,6 +604,15 @@ class AgentHelpers:
     
     def _determine_privilege_level(self, symbol: str) -> str:
         """Determine privilege level of a function"""
+        # Check the symbol string directly first
+        symbol_lower = symbol.lower()
+        
+        if any(x in symbol_lower for x in ["admin", "superuser", "root"]):
+            return "admin"
+        elif any(x in symbol_lower for x in ["system", "internal", "private"]):
+            return "system"
+        
+        # Then try from graph
         sym = self.graph.get_symbol(symbol)
         if not sym:
             return "user"

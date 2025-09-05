@@ -26,6 +26,16 @@ class SymbolKind(Enum):
     CONSTANT = "constant"
     FIELD = "field"
     PROPERTY = "property"
+    
+    @classmethod
+    def _missing_(cls, value):
+        """Handle unknown symbol kinds gracefully"""
+        # Try case-insensitive match
+        for member in cls:
+            if member.value.lower() == value.lower():
+                return member
+        # Default to FUNCTION for unknown types
+        return cls.FUNCTION
 
 
 class EdgeType(Enum):

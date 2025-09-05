@@ -1,9 +1,8 @@
 use anyhow::Result;
 use protocol::{EdgeIR, EdgeType, Language, OccurrenceIR, Span, SymbolIR, SymbolKind};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde_json;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use tracing::info;
 
 mod graph;
 pub use graph::{CodeGraph, GraphStats};
@@ -192,7 +191,7 @@ impl GraphStore {
     pub fn insert_symbol(&self, commit_id: i64, symbol: &SymbolIR) -> Result<()> {
         let lang_str = serde_json::to_string(&symbol.lang)?;
         let kind_str = serde_json::to_string(&symbol.kind)?;
-        let visibility_str = symbol.visibility.as_ref().map(|v| serde_json::to_string(v)).transpose()?;
+        let visibility_str = symbol.visibility.as_ref().map(serde_json::to_string).transpose()?;
         
         self.conn.execute(
             r#"INSERT OR REPLACE INTO symbol 

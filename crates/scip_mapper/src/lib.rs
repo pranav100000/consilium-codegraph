@@ -93,7 +93,7 @@ impl ScipMapper {
         
         // Use the scip CLI to convert to JSON
         let output = Command::new(&self.scip_cli_path)
-            .args(&["print", "--json", scip_file])
+            .args(["print", "--json", scip_file])
             .output()?;
         
         if !output.status.success() {
@@ -118,7 +118,7 @@ impl ScipMapper {
         for doc in &scip_index.documents {
             // Process symbols
             for scip_sym in &doc.symbols {
-                if let Some(symbol) = self.convert_symbol(&scip_sym, &doc.relative_path, commit_sha) {
+                if let Some(symbol) = self.convert_symbol(scip_sym, &doc.relative_path, commit_sha) {
                     symbols.push(symbol);
                     
                     // Process relationships as edges
@@ -134,7 +134,7 @@ impl ScipMapper {
             
             // Process occurrences
             for scip_occ in &doc.occurrences {
-                if let Some(occ) = self.convert_occurrence(&scip_occ, &doc.relative_path) {
+                if let Some(occ) = self.convert_occurrence(scip_occ, &doc.relative_path) {
                     occurrences.push(occ);
                 }
             }
@@ -157,7 +157,7 @@ impl ScipMapper {
             .trim_end_matches("()")
             .trim_end_matches('#')
             .split('/')
-            .last()?
+            .next_back()?
             .to_string();
         
         // Determine kind based on symbol format

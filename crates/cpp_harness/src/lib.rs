@@ -956,12 +956,53 @@ impl CppHarness {
         occurrences: &mut Vec<OccurrenceIR>,
         context: &mut ParseContext,
     ) -> Result<()> {
-        // Get the field declarator
-        if let Some(declarator) = node.child_by_field_name("declarator") {
+        // Get the type for all fields in this declaration
+        let field_type = node.child_by_field_name("type")
+            .map(|n| self.get_text(n, content))
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        // Handle multiple declarators (e.g., "int x, y, z;")
+        let mut declarators = Vec::new();
+        
+        // Check all children for field_identifier nodes (for comma-separated fields)
+        for child in node.children(&mut node.walk()) {
+            match child.kind() {
+                "field_identifier" => {
+                    // Direct field identifier
+                    declarators.push(child);
+                }
+                "init_declarator" => {
+                    // Field with possible initializer
+                    if let Some(decl) = child.child_by_field_name("declarator") {
+                        declarators.push(decl);
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        // If we didn't find any declarators via children, check the declarator field
+        if declarators.is_empty() {
+            if let Some(declarator) = node.child_by_field_name("declarator") {
+                declarators.push(declarator);
+            }
+        }
+        
+        // Process each declarator
+        for declarator in declarators {
             // Check if this is a function declarator (method declaration)
             // Function declarators have a "parameters" field
-            let is_function = declarator.kind() == "function_declarator" || 
-                              declarator.child_by_field_name("parameters").is_some();
+            // BUT: Function pointer fields like void (*field)(params) also have parameters
+            // We need to distinguish them
+            let mut is_function = false;
+            if declarator.kind() == "function_declarator" {
+                // Check if it's a function pointer by looking for parenthesized_declarator
+                if let Some(inner_decl) = declarator.child_by_field_name("declarator") {
+                    is_function = inner_decl.kind() != "parenthesized_declarator";
+                } else {
+                    is_function = true;
+                }
+            }
             
             if is_function {
                 // This is a method declaration, not a field
@@ -978,10 +1019,6 @@ impl CppHarness {
                 let fqn = context.build_fqn(&name);
                 let sig_hash = format!("{:x}", md5::compute(&fqn));
                 
-                // Get the type
-                let field_type = node.child_by_field_name("type")
-                    .map(|n| self.get_text(n, content))
-                    .unwrap_or_else(|| "unknown".to_string());
                 
                 let symbol = SymbolIR {
                     id: format!("{}#{}", file_path, fqn),
@@ -1075,7 +1112,7 @@ impl CppHarness {
                     let value = self.get_text(value_node, content);
                     if !value.is_empty() {
                         signature.push(' ');
-                        signature.push_str(&value.trim());
+                        signature.push_str(value.trim());
                     }
                 }
             }
@@ -1159,21 +1196,54 @@ impl CppHarness {
         let mut current = declarator;
         loop {
             match current.kind() {
-                "function_declarator" | "array_declarator" | "parenthesized_declarator" => {
+                "function_declarator" | "array_declarator" => {
                     if let Some(decl) = current.child_by_field_name("declarator") {
                         current = decl;
                     } else {
+                        break;
+                    }
+                }
+                "parenthesized_declarator" => {
+                    // For function pointers, the identifier might be inside the parentheses
+                    if let Some(decl) = current.child_by_field_name("declarator") {
+                        current = decl;
+                    } else {
+                        // Check all children for an identifier
+                        for i in 0..current.child_count() {
+                            if let Some(child) = current.child(i) {
+                                if child.kind() == "identifier" {
+                                    return Some(self.get_text(child, content));
+                                }
+                            }
+                        }
                         break;
                     }
                 }
                 "pointer_declarator" | "reference_declarator" => {
-                    if let Some(decl) = current.child_by_field_name("declarator") {
-                        current = decl;
-                    } else {
-                        break;
+                    // Check if we have a function_declarator child (not necessarily in declarator field)
+                    let mut found_function = false;
+                    for i in 0..current.child_count() {
+                        if let Some(child) = current.child(i) {
+                            if child.kind() == "function_declarator" {
+                                current = child;
+                                found_function = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if !found_function {
+                        if let Some(decl) = current.child_by_field_name("declarator") {
+                            current = decl;
+                        } else {
+                            break;
+                        }
                     }
                 }
                 "identifier" => {
+                    return Some(self.get_text(current, content));
+                }
+                "field_identifier" => {
                     return Some(self.get_text(current, content));
                 }
                 "destructor_name" => {
@@ -1182,6 +1252,10 @@ impl CppHarness {
                 "operator_name" => {
                     let op_text = self.get_text(current, content);
                     return Some(self.normalize_operator_name(&op_text));
+                }
+                "abstract_pointer_declarator" | "abstract_function_declarator" | "abstract_array_declarator" => {
+                    // Abstract declarators don't have names - skip them
+                    return None;
                 }
                 _ => break,
             }
@@ -1214,10 +1288,24 @@ impl CppHarness {
                     }
                 }
                 "pointer_declarator" | "reference_declarator" => {
-                    if let Some(decl) = current.child_by_field_name("declarator") {
-                        current = decl;
-                    } else {
-                        break;
+                    // Check if we have a function_declarator child (not necessarily in declarator field)
+                    let mut found_function = false;
+                    for i in 0..current.child_count() {
+                        if let Some(child) = current.child(i) {
+                            if child.kind() == "function_declarator" {
+                                current = child;
+                                found_function = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if !found_function {
+                        if let Some(decl) = current.child_by_field_name("declarator") {
+                            current = decl;
+                        } else {
+                            break;
+                        }
                     }
                 }
                 "identifier" => {
@@ -1667,7 +1755,7 @@ private:
         assert_eq!(class_sym.kind, SymbolKind::Class);
         
         let method_sym = symbols.iter().find(|s| s.name == "add").unwrap();
-        assert_eq!(method_sym.kind, SymbolKind::Function);
+        assert_eq!(method_sym.kind, SymbolKind::Method);
         assert_eq!(method_sym.fqn, "Calculator::add");
         
         let field_sym = symbols.iter().find(|s| s.name == "value").unwrap();

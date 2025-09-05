@@ -1,7 +1,7 @@
 use anyhow::Result;
 use protocol::{EdgeIR, EdgeType, Language, OccurrenceIR, OccurrenceRole, Resolution, Span, SymbolIR, SymbolKind};
 use std::collections::HashMap;
-use tree_sitter::{Node, Parser, Query, QueryCursor, QueryCapture};
+use tree_sitter::{Node, Parser};
 
 pub struct TypeScriptHarness {
     js_parser: Parser,
@@ -542,7 +542,7 @@ impl TypeScriptHarness {
             if !path_str.ends_with(".ts") && !path_str.ends_with(".tsx") && 
                !path_str.ends_with(".js") && !path_str.ends_with(".jsx") {
                 // Try common extensions
-                for ext in &[".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.js"] {
+                if let Some(ext) = [".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.js"].iter().next() {
                     let with_ext = format!("{}{}", path_str, ext);
                     return with_ext;
                 }

@@ -316,10 +316,10 @@ class CodeGraph:
             location=Location(
                 file=row["path"],
                 line=row["line"],
-                column=row.get("column")
+                column=row["column"] if "column" in row.keys() else None
             ),
-            signature=row.get("signature"),
-            docstring=row.get("docstring"),
+            signature=row["signature"] if "signature" in row.keys() else None,
+            docstring=row["docstring"] if "docstring" in row.keys() else None,
             analyzer="consilium",
             confidence=1.0
         )
