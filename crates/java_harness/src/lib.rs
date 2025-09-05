@@ -1467,6 +1467,10 @@ mod edge_cases;
 mod complex_tests;
 #[cfg(test)]
 mod strict_tests;
+#[cfg(test)]
+mod error_handling_tests;
+#[cfg(test)]
+mod stress_tests;
 
 #[cfg(test)]
 mod tests {
