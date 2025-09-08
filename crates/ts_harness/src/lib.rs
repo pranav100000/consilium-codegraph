@@ -573,6 +573,7 @@ impl TypeScriptHarness {
         SymbolIR {
             id,
             lang,
+            lang_version: None,
             kind,
             name: name.to_string(),
             fqn,

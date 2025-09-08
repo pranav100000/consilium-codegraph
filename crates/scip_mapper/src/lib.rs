@@ -5,6 +5,9 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+#[cfg(test)]
+mod test_parse;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScipIndex {
     pub metadata: ScipMetadata,
@@ -13,9 +16,9 @@ pub struct ScipIndex {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScipMetadata {
-    pub version: String,
     pub tool_info: ScipToolInfo,
     pub project_root: String,
+    pub text_document_encoding: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,6 +53,7 @@ pub struct ScipOccurrence {
     pub range: Vec<i32>,
     pub symbol: String,
     pub symbol_roles: i32,
+    pub enclosing_range: Option<Vec<i32>>,
 }
 
 pub struct ScipMapper {
@@ -64,7 +68,7 @@ impl ScipMapper {
         
         Self { 
             provenance,
-            scip_cli_path: "./scip".to_string(), // Default path
+            scip_cli_path: "scip".to_string(), // Use system PATH
         }
     }
     
@@ -178,6 +182,7 @@ impl ScipMapper {
         Some(SymbolIR {
             id,
             lang: Language::TypeScript,
+            lang_version: None,
             kind,
             name,
             fqn,

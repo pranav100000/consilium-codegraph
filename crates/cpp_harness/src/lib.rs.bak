@@ -19,10 +19,6 @@ mod strict_tests;
 mod error_handling_tests;
 #[cfg(test)]
 mod stress_tests;
-#[cfg(test)]
-mod version_tests;
-#[cfg(test)]
-mod edge_case_extreme_tests;
 
 pub struct CppHarness {
     parser: Parser,
@@ -309,7 +305,6 @@ impl CppHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
             kind,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -370,7 +365,6 @@ impl CppHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Cpp,
-            lang_version: self.version.clone(),
             kind: SymbolKind::Class,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -492,7 +486,6 @@ impl CppHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                 kind: SymbolKind::Struct,
                 name: name.clone(),
                 fqn: fqn.clone(),
@@ -566,7 +559,6 @@ impl CppHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                 kind: SymbolKind::Union,
                 name: name.clone(),
                 fqn: fqn.clone(),
@@ -627,7 +619,6 @@ impl CppHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                 kind: SymbolKind::Enum,
                 name: name.clone(),
                 fqn: fqn.clone(),
@@ -661,7 +652,6 @@ impl CppHarness {
                             let enum_symbol = SymbolIR {
                                 id: format!("{}#{}", file_path, enum_fqn),
                                 lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                                 kind: SymbolKind::EnumMember,
                                 name: enum_val.clone(),
                                 fqn: enum_fqn,
@@ -716,7 +706,6 @@ impl CppHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: ProtoLanguage::Cpp,
-                lang_version: self.version.clone(),
                 kind: SymbolKind::TypeAlias,
                 name: name.clone(),
                 fqn: fqn.clone(),
@@ -799,7 +788,6 @@ impl CppHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Cpp,
-            lang_version: self.version.clone(),
             kind: SymbolKind::Namespace,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -883,7 +871,6 @@ impl CppHarness {
                     let symbol = SymbolIR {
                         id: format!("{}#{}", file_path, fqn),
                         lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                         kind: SymbolKind::Typedef,
                         name: name.clone(),
                         fqn: fqn.clone(),
@@ -953,7 +940,6 @@ impl CppHarness {
                 let symbol = SymbolIR {
                     id: format!("{}#{}", file_path, fqn),
                     lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                     kind: SymbolKind::Function,
                     name: name.clone(),
                     fqn: fqn.clone(),
@@ -990,7 +976,6 @@ impl CppHarness {
                         let symbol = SymbolIR {
                             id: format!("{}#{}", file_path, fqn),
                             lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                             kind: SymbolKind::Variable,
                             name: name.clone(),
                             fqn: fqn.clone(),
@@ -1095,7 +1080,6 @@ impl CppHarness {
                 let symbol = SymbolIR {
                     id: format!("{}#{}", file_path, fqn),
                     lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                     kind: SymbolKind::Field,
                     name: name.clone(),
                     fqn: fqn.clone(),
@@ -1193,7 +1177,6 @@ impl CppHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
                 kind: SymbolKind::Constant, // Macros are like constants
                 name: name.clone(),
                 fqn,
@@ -1512,7 +1495,6 @@ impl CppHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: if self.is_cpp { ProtoLanguage::Cpp } else { ProtoLanguage::C },
-            lang_version: self.version.clone(),
             kind: SymbolKind::Function, // Lambdas are anonymous functions
             name: lambda_id.clone(),
             fqn,

@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub mod version;
+pub use version::{LanguageVersion, Version, VersionDetection};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Language {
     TypeScript,
     JavaScript,
@@ -80,6 +83,7 @@ pub struct Span {
 pub struct SymbolIR {
     pub id: String,
     pub lang: Language,
+    pub lang_version: Option<Version>,  // Track the language version
     pub kind: SymbolKind,
     pub name: String,
     pub fqn: String,
@@ -147,6 +151,7 @@ mod tests {
         let symbol = SymbolIR {
             id: "test_id".to_string(),
             lang: Language::TypeScript,
+            lang_version: None,
             kind: SymbolKind::Function,
             name: "test".to_string(),
             fqn: "module.test".to_string(),

@@ -25,6 +25,13 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ignore = { workspace = true }
 rayon = { workspace = true }
+dashmap = { workspace = true }
+globset = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+rustc-hash = { workspace = true }
+indexmap = { workspace = true }
+md5 = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.14"

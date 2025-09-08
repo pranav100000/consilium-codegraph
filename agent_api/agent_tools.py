@@ -14,7 +14,8 @@ class CodeTools:
     The agent decides what's important, not us.
     """
     
-    def __init__(self, repo_path: str, db_path: Optional[str] = None):
+    def __init__(self, repo_path: str, db_path: Optional[str] = None,
+                 check_same_thread: bool = True, timeout: float = 10.0):
         self.repo_path = Path(repo_path)
         if db_path is None:
             db_path = self.repo_path / ".reviewbot" / "graph.db"
@@ -23,8 +24,16 @@ class CodeTools:
         if not self.db_path.exists():
             raise FileNotFoundError(f"Database not found at {self.db_path}")
         
-        self.conn = sqlite3.connect(self.db_path)
+        # Support concurrent access with proper timeout
+        self.conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=check_same_thread,
+            timeout=timeout
+        )
         self.conn.row_factory = sqlite3.Row
+        # Enable WAL mode for better concurrency
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA foreign_keys=ON")
     
     # ========== Basic Queries - Let agent interpret ==========
     
@@ -371,6 +380,16 @@ class CodeTools:
         """Close database connection"""
         if self.conn:
             self.conn.close()
+            self.conn = None
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures connection is closed."""
+        self.close()
+        return False
 
 
 # ========== Simple Usage Example ==========

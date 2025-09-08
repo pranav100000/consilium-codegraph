@@ -10,6 +10,7 @@ use go_harness::GoHarness;
 use rust_harness::RustHarness;
 use java_harness::JavaHarness;
 use cpp_harness::CppHarness;
+use scip_mapper::ScipMapper;
 
 mod walker;
 use walker::FileWalker;
@@ -42,6 +43,9 @@ enum Commands {
     Scan {
         #[arg(long)]
         no_semantic: bool,
+        
+        #[arg(long)]
+        semantic: bool,
         
         #[arg(long)]
         no_write: bool,
@@ -103,9 +107,15 @@ async fn main() -> Result<()> {
     });
     
     match cli.command {
-        Commands::Scan { no_write, .. } => {
+        Commands::Scan { no_write, semantic, no_semantic, .. } => {
             if no_write {
                 info!("Running scan in dry-run mode (--no-write)");
+            }
+            
+            // Determine if we should run semantic analysis
+            let run_semantic = semantic && !no_semantic;
+            if run_semantic {
+                info!("Semantic analysis enabled");
             }
             
             let commit_sha = get_current_commit(&repo_root)?;
@@ -378,9 +388,69 @@ async fn main() -> Result<()> {
                     }
                 }
                 
+                // Run semantic analysis if enabled
+                if run_semantic {
+                    info!("Starting semantic analysis with SCIP indexers...");
+                    
+                    // Initialize SCIP mapper
+                    let scip_mapper = ScipMapper::new(
+                        "scip-typescript",  // indexer name
+                        "0.3.16"  // version
+                    ).with_scip_cli_path("./scip".to_string());
+                    
+                    // Check if this is a TypeScript/JavaScript project
+                    let has_ts_js = files_to_process.iter().any(|path| {
+                        path.to_string_lossy().ends_with(".ts") ||
+                        path.to_string_lossy().ends_with(".tsx") ||
+                        path.to_string_lossy().ends_with(".js") ||
+                        path.to_string_lossy().ends_with(".jsx")
+                    });
+                    
+                    if has_ts_js {
+                        info!("TypeScript/JavaScript files detected, running semantic analysis");
+                        
+                        // Generate SCIP index
+                        match scip_mapper.run_scip_typescript(&repo_root.to_string_lossy()) {
+                            Ok(scip_file) => {
+                                info!("Generated SCIP index: {}", scip_file);
+                                
+                                // Parse and convert to IR
+                                match scip_mapper.parse_scip_index(&scip_file) {
+                                    Ok(scip_index) => {
+                                        match scip_mapper.map_scip_to_ir(&scip_index, &commit_sha) {
+                                            Ok((semantic_symbols, semantic_edges, semantic_occurrences)) => {
+                                                info!("SCIP analysis found {} symbols, {} edges, {} occurrences",
+                                                    semantic_symbols.len(), semantic_edges.len(), semantic_occurrences.len());
+                                                
+                                                // Store semantic data
+                                                for symbol in &semantic_symbols {
+                                                    store.insert_symbol(commit_id, symbol)?;
+                                                }
+                                                for edge in &semantic_edges {
+                                                    store.insert_edge(commit_id, edge)?;
+                                                }
+                                                for occurrence in &semantic_occurrences {
+                                                    store.insert_occurrence(commit_id, occurrence)?;
+                                                }
+                                                
+                                                total_symbols += semantic_symbols.len();
+                                                total_edges += semantic_edges.len();
+                                            },
+                                            Err(e) => info!("Failed to convert SCIP to IR: {}", e)
+                                        }
+                                    },
+                                    Err(e) => info!("Failed to parse SCIP index: {}", e)
+                                }
+                            },
+                            Err(e) => info!("Failed to generate SCIP index: {}", e)
+                        }
+                    }
+                }
+                
                 let action = if incremental { "Updated" } else { "Indexed" };
-                info!("{} {} files, {} symbols, {} edges", action, files_to_process.len(), total_symbols, total_edges);
-                println!("{} {} files, {} symbols, {} edges", action, files_to_process.len(), total_symbols, total_edges);
+                let analysis_type = if run_semantic { "semantic + syntactic" } else { "syntactic" };
+                info!("{} {} files, {} symbols, {} edges ({})", action, files_to_process.len(), total_symbols, total_edges, analysis_type);
+                println!("{} {} files, {} symbols, {} edges ({})", action, files_to_process.len(), total_symbols, total_edges, analysis_type);
             } else {
                 println!("Found {} files (dry run)", files_to_process.len());
             }

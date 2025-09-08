@@ -648,5 +648,75 @@ class TestAgentUsagePatterns(unittest.TestCase):
         self.assertIsInstance(import_chains, list)
 
 
+class TestExampleCode(unittest.TestCase):
+    """Test the example code to improve coverage"""
+    
+    def test_example_agent_usage(self):
+        """Test the example_agent_usage function"""
+        from agent_tools import example_agent_usage
+        
+        # Create test database
+        temp_dir = tempfile.mkdtemp()
+        repo_path = Path(temp_dir)
+        db_dir = repo_path / ".reviewbot"
+        db_dir.mkdir()
+        db_path = db_dir / "graph.db"
+        
+        TestFixtures.create_test_database(str(db_path))
+        
+        # Capture output
+        import io
+        from contextlib import redirect_stdout
+        
+        f = io.StringIO()
+        with redirect_stdout(f):
+            example_agent_usage(str(repo_path))
+        
+        output = f.getvalue()
+        
+        # Should print entry points
+        self.assertIn("Found entry points:", output)
+        
+        # Clean up
+        import shutil
+        shutil.rmtree(temp_dir)
+    
+    def test_main_execution(self):
+        """Test the __main__ execution"""
+        import subprocess
+        import sys
+        
+        # Create test database
+        temp_dir = tempfile.mkdtemp()
+        repo_path = Path(temp_dir)
+        db_dir = repo_path / ".reviewbot"
+        db_dir.mkdir()
+        db_path = db_dir / "graph.db"
+        
+        TestFixtures.create_test_database(str(db_path))
+        
+        # Test with no arguments (should do nothing)
+        result = subprocess.run(
+            [sys.executable, "-c", "import agent_tools"],
+            capture_output=True,
+            text=True
+        )
+        self.assertEqual(result.returncode, 0)
+        
+        # Test with repo path argument
+        result = subprocess.run(
+            [sys.executable, "agent_tools.py", str(repo_path)],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        # Should run example_agent_usage
+        self.assertIn("Found entry points:", result.stdout)
+        
+        # Clean up
+        import shutil
+        shutil.rmtree(temp_dir)
+
+
 if __name__ == "__main__":
     unittest.main()

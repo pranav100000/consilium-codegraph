@@ -435,6 +435,95 @@ class TestConvenienceFunctions:
         assert "calls" in related["dependencies"]
 
 
+class TestUncoveredLines:
+    """Test uncovered lines for better coverage"""
+    
+    def test_find_paths_max_depth_reached(self):
+        """Test find_paths when max_depth is reached"""
+        repo_path = TestFixtures.create_test_database()
+        api = CodeGraphAPI(repo_path)
+        
+        # Test with depth 1 - should limit paths
+        paths = api.find_paths("main", "database.execute_query", max_depth=1)
+        # With depth 1, can't reach execute_query from main
+        assert len(paths) == 0
+        
+        api.close()
+    
+    def test_get_dependencies_edge_type_handling(self):
+        """Test edge type handling in get_dependencies"""
+        repo_path = TestFixtures.create_test_database()
+        api = CodeGraphAPI(repo_path)
+        
+        # Add custom edge type
+        conn = api.conn
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO edges (src, dst, edge_type) VALUES (?, ?, ?)",
+                      ("main", "custom_module", "custom_edge"))
+        conn.commit()
+        
+        deps = api.get_dependencies("main")
+        # Should handle custom edge type
+        assert "custom_edge" in deps or "custom_module" in [item for sublist in deps.values() for item in sublist]
+        
+        api.close()
+    
+    def test_analyze_codebase_complex_functions(self):
+        """Test analyze_codebase finding complex functions"""
+        repo_path = TestFixtures.create_test_database()
+        
+        # Add a complex function with many callees
+        conn = sqlite3.connect(Path(repo_path) / ".reviewbot" / "graph.db")
+        cursor = conn.cursor()
+        
+        # Add a complex function
+        cursor.execute("INSERT INTO symbols (fqn, name, kind, line, file_id, signature) VALUES (?, ?, ?, ?, ?, ?)",
+                      ("complex.func", "func", "function", 1, 1, "def func()"))
+        
+        # Add many callees
+        for i in range(15):
+            cursor.execute("INSERT INTO symbols (fqn, name, kind, line, file_id, signature) VALUES (?, ?, ?, ?, ?, ?)",
+                          (f"helper{i}", f"helper{i}", "function", i+10, 1, f"def helper{i}()"))
+            cursor.execute("INSERT INTO edges (src, dst, edge_type) VALUES (?, ?, ?)",
+                          ("complex.func", f"helper{i}", "calls"))
+        
+        conn.commit()
+        conn.close()
+        
+        analysis = analyze_codebase(repo_path)
+        
+        # Should find the complex function
+        assert len(analysis["complex_functions"]) > 0
+        complex_funcs = [f["function"] for f in analysis["complex_functions"]]
+        assert "complex.func" in complex_funcs
+    
+    def test_main_execution(self):
+        """Test the __main__ execution block"""
+        import subprocess
+        import sys
+        
+        repo_path = TestFixtures.create_test_database()
+        
+        # Test with no arguments
+        result = subprocess.run(
+            [sys.executable, "simple_api.py"],
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 1
+        assert "Usage:" in result.stdout or "Usage:" in result.stderr
+        
+        # Test with valid repo path
+        result = subprocess.run(
+            [sys.executable, "simple_api.py", str(repo_path)],
+            capture_output=True,
+            text=True
+        )
+        assert result.returncode == 0
+        assert "Codebase Statistics:" in result.stdout
+        assert "Symbols:" in result.stdout
+
+
 class TestEdgeCases:
     """Test edge cases and error handling"""
     

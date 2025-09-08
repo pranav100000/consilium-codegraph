@@ -32,3 +32,12 @@ anyhow = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Symbol resolution dependencies
+dashmap = "5.5"
+globset = "0.4"
+lru = "0.12"
+parking_lot = "0.12"
+rustc-hash = "1.1"
+indexmap = { version = "2.1", features = ["serde"] }
+md5 = "0.7"

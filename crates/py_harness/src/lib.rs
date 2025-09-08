@@ -364,6 +364,7 @@ impl PythonHarness {
         SymbolIR {
             id,
             lang: Language::Python,
+            lang_version: None,
             kind,
             name: name.to_string(),
             fqn,

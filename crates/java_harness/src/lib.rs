@@ -230,6 +230,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Class,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -361,6 +362,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Interface,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -459,6 +461,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Enum,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -513,6 +516,7 @@ impl JavaHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: ProtoLanguage::Java,
+                lang_version: None,
                 kind: SymbolKind::EnumMember,
                 name: name.clone(),
                 fqn,
@@ -594,6 +598,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: if node.kind() == "constructor_declaration" {
                 SymbolKind::Method
             } else {
@@ -681,6 +686,7 @@ impl JavaHarness {
                     let symbol = SymbolIR {
                         id: format!("{}#{}", file_path, fqn),
                         lang: ProtoLanguage::Java,
+                        lang_version: None,
                         kind: SymbolKind::Field,
                         name: name.clone(),
                         fqn,
@@ -742,6 +748,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Class, // Records are like classes
             name: name.clone(),
             fqn: fqn.clone(),
@@ -772,6 +779,7 @@ impl JavaHarness {
         let constructor_symbol = SymbolIR {
             id: format!("{}#{}_constructor", file_path, constructor_fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Method,
             name: name.clone(),
             fqn: constructor_fqn,
@@ -899,6 +907,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Interface, // Annotations are a special kind of interface
             name: format!("@{}", name),
             fqn,
@@ -973,6 +982,7 @@ impl JavaHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: ProtoLanguage::Java,
+                lang_version: None,
                 kind: SymbolKind::Method,
                 name: name.clone(),
                 fqn,
@@ -1062,6 +1072,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Function, // Lambdas are anonymous functions
             name: lambda_id.clone(),
             fqn,
@@ -1149,6 +1160,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Method, // Static initializers are like special methods
             name: "<clinit>".to_string(), // Java bytecode name for static initializer
             fqn,
@@ -1198,6 +1210,7 @@ impl JavaHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Java,
+            lang_version: None,
             kind: SymbolKind::Method, // Instance initializers are like special methods
             name: "<init>".to_string(), // Java bytecode name for instance initializer
             fqn,
@@ -1471,6 +1484,8 @@ mod strict_tests;
 mod error_handling_tests;
 #[cfg(test)]
 mod stress_tests;
+#[cfg(test)]
+mod edge_case_extreme_tests;
 
 #[cfg(test)]
 mod tests {

@@ -418,6 +418,7 @@ impl GoHarness {
         SymbolIR {
             id,
             lang: Language::Go,
+            lang_version: None,
             kind,
             name: name.to_string(),
             fqn,

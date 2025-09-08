@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "tool_info": {
+      "name": "scip-typescript",
+      "version": "0.3.16"
+    },
+    "project_root": "/Users/pranavsharan/Developer/consilium-codegraph/test_ts_project",
+    "text_document_encoding": 65001
+  },
+  "documents": [
+    {
+      "relative_path": "user.ts",
+      "symbols": [
+        {
+          "symbol": "scip-typescript npm . . `user.ts`/",
+          "documentation": [
+            "```ts\nmodule \"user.ts\"\n```"
+          ]
+        },
+        {
+          "symbol": "scip-typescript npm . . `user.ts`/User#",
+          "documentation": [
+            "```ts\ninterface User\n```"
+          ]
+        },
+        {
+          "symbol": "scip-typescript npm . . `user.ts`/UserService#",
+          "documentation": [
+            "```ts\nclass UserService\n```"
+          ]
+        }
+      ],
+      "occurrences": [
+        {
+          "range": [0, 17, 0, 21],
+          "symbol": "scip-typescript npm . . `user.ts`/User#",
+          "symbol_roles": 1,
+          "enclosing_range": [0, 0, 4, 1]
+        },
+        {
+          "range": [7, 13, 7, 24],
+          "symbol": "scip-typescript npm . . `user.ts`/UserService#",
+          "symbol_roles": 1,
+          "enclosing_range": [7, 0, 21, 1]
+        }
+      ]
+    }
+  ]
+}

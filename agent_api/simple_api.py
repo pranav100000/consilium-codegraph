@@ -34,13 +34,16 @@ class CodeGraphAPI:
     Designed to run on the same server as agents - no auth needed.
     """
     
-    def __init__(self, repo_path: str, db_path: Optional[str] = None):
+    def __init__(self, repo_path: str, db_path: Optional[str] = None, 
+                 check_same_thread: bool = True, timeout: float = 10.0):
         """
         Initialize the API for a repository.
         
         Args:
             repo_path: Path to the repository root
             db_path: Path to the graph database (default: .reviewbot/graph.db)
+            check_same_thread: If False, allows multi-threaded access (default: True)
+            timeout: Database lock timeout in seconds (default: 10.0)
         """
         self.repo_path = Path(repo_path)
         if db_path is None:
@@ -50,8 +53,16 @@ class CodeGraphAPI:
         if not self.db_path.exists():
             raise FileNotFoundError(f"Database not found at {self.db_path}. Run 'reviewbot scan' first.")
         
-        self.conn = sqlite3.connect(self.db_path)
+        # Support concurrent access with proper timeout
+        self.conn = sqlite3.connect(
+            self.db_path, 
+            check_same_thread=check_same_thread,
+            timeout=timeout
+        )
         self.conn.row_factory = sqlite3.Row
+        # Enable WAL mode for better concurrency
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA foreign_keys=ON")
     
     # ========== Core Queries ==========
     
@@ -337,6 +348,28 @@ class CodeGraphAPI:
         """Close the database connection."""
         if self.conn:
             self.conn.close()
+            self.conn = None
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures connection is closed."""
+        self.close()
+        return False
+    
+    def begin_transaction(self):
+        """Begin an explicit transaction."""
+        self.conn.execute("BEGIN TRANSACTION")
+    
+    def commit(self):
+        """Commit the current transaction."""
+        self.conn.commit()
+    
+    def rollback(self):
+        """Rollback the current transaction."""
+        self.conn.rollback()
 
 
 # ========== Convenience Functions for Agents ==========

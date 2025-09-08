@@ -387,6 +387,7 @@ impl GraphStore {
                 Ok(SymbolIR {
                     id: row.get(0)?,
                     lang: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or(Language::Unknown),
+                    lang_version: None,
                     kind: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or(SymbolKind::Variable),
                     name: row.get(3)?,
                     fqn: row.get(4)?,
@@ -477,6 +478,7 @@ impl GraphStore {
                 Ok(SymbolIR {
                     id: row.get(0)?,
                     lang: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or(Language::Unknown),
+                    lang_version: None,
                     kind: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or(SymbolKind::Variable),
                     name: row.get(3)?,
                     fqn: row.get(4)?,
@@ -521,6 +523,7 @@ impl GraphStore {
             Ok(SymbolIR {
                 id: row.get(0)?,
                 lang: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or(Language::Unknown),
+                lang_version: None,
                 kind: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or(SymbolKind::Variable),
                 name: row.get(3)?,
                 fqn: row.get(4)?,
@@ -582,6 +585,7 @@ impl GraphStore {
             Ok(SymbolIR {
                 id: row.get(0)?,
                 lang: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or(Language::Unknown),
+                lang_version: None,
                 kind: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or(SymbolKind::Variable),
                 name: row.get(3)?,
                 fqn: row.get(4)?,
@@ -625,6 +629,7 @@ impl GraphStore {
             Ok(SymbolIR {
                 id: row.get(0)?,
                 lang: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or(Language::Unknown),
+                lang_version: None,
                 kind: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or(SymbolKind::Variable),
                 name: row.get(3)?,
                 fqn: row.get(4)?,
@@ -769,6 +774,7 @@ mod tests {
         SymbolIR {
             id: id.to_string(),
             lang: Language::TypeScript,
+            lang_version: None,
             kind: SymbolKind::Function,
             name: name.to_string(),
             fqn: format!("test.{}", name),
@@ -1157,6 +1163,7 @@ mod tests {
         let symbol = SymbolIR {
             id: "empty".to_string(),
             lang: Language::Unknown,
+            lang_version: None,
             kind: SymbolKind::Variable,
             name: "".to_string(), // Empty name
             fqn: "".to_string(),  // Empty FQN

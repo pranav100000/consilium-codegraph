@@ -211,6 +211,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: if impl_type.is_some() {
                 SymbolKind::Method
             } else {
@@ -259,6 +260,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: SymbolKind::Struct,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -316,6 +318,7 @@ impl RustHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: ProtoLanguage::Rust,
+                lang_version: None,
                 kind: SymbolKind::Field,
                 name: name.clone(),
                 fqn,
@@ -360,6 +363,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: SymbolKind::Enum,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -417,6 +421,7 @@ impl RustHarness {
             let symbol = SymbolIR {
                 id: format!("{}#{}", file_path, fqn),
                 lang: ProtoLanguage::Rust,
+                lang_version: None,
                 kind: SymbolKind::Enum, // Using Enum as EnumMember doesn't exist
                 name: name.clone(),
                 fqn,
@@ -522,6 +527,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: SymbolKind::Trait,
             name: name.clone(),
             fqn,
@@ -568,6 +574,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: SymbolKind::Module,
             name: name.clone(),
             fqn: fqn.clone(),
@@ -667,6 +674,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: SymbolKind::Constant,
             name: name.clone(),
             fqn,
@@ -711,6 +719,7 @@ impl RustHarness {
         let symbol = SymbolIR {
             id: format!("{}#{}", file_path, fqn),
             lang: ProtoLanguage::Rust,
+            lang_version: None,
             kind: SymbolKind::Type, // Using Type for type aliases
             name: name.clone(),
             fqn,
