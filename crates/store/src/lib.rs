@@ -519,7 +519,9 @@ impl GraphStore {
             "#,
         )?;
         
-        let symbol_iter = stmt.query_map(params![query, limit], |row| {
+        // For FTS5, append * for prefix matching to find partial matches
+        let fts_query = format!("{}*", query);
+        let symbol_iter = stmt.query_map(params![fts_query, limit], |row| {
             Ok(SymbolIR {
                 id: row.get(0)?,
                 lang: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or(Language::Unknown),
@@ -744,7 +746,8 @@ impl GraphStore {
         // Find files that import/depend on this file
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT file_src FROM edge 
-             WHERE file_dst = ?1 AND edge_type = 'Imports'"
+             WHERE file_dst = ?1 AND file_src IS NOT NULL 
+             AND edge_type IN ('\"Imports\"', '\"Reads\"', '\"Calls\"', '\"Contains\"', '\"Implements\"')"
         )?;
         
         let dependents = stmt.query_map([file_path], |row| {

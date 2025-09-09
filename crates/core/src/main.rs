@@ -10,10 +10,17 @@ use go_harness::GoHarness;
 use rust_harness::RustHarness;
 use java_harness::JavaHarness;
 use cpp_harness::CppHarness;
-use scip_mapper::ScipMapper;
+use csharp_harness::CSharpHarness;
 
 mod walker;
 use walker::FileWalker;
+
+mod resolution;
+use resolution::ResolutionEngine;
+
+mod language_strategy;
+mod metrics;
+use metrics::MetricsCollector;
 
 #[derive(Parser)]
 #[command(name = "reviewbot")]
@@ -46,6 +53,9 @@ enum Commands {
         
         #[arg(long)]
         semantic: bool,
+        
+        #[arg(long)]
+        incremental: bool,
         
         #[arg(long)]
         no_write: bool,
@@ -107,7 +117,10 @@ async fn main() -> Result<()> {
     });
     
     match cli.command {
-        Commands::Scan { no_write, semantic, no_semantic, .. } => {
+        Commands::Scan { no_write, semantic, no_semantic, incremental, .. } => {
+            let mut metrics = MetricsCollector::new();
+            metrics.start_phase("initialization");
+            
             if no_write {
                 info!("Running scan in dry-run mode (--no-write)");
             }
@@ -121,7 +134,11 @@ async fn main() -> Result<()> {
             let commit_sha = get_current_commit(&repo_root)?;
             info!("Scanning repository at commit: {}", commit_sha);
             
+            metrics.end_phase("initialization");
+            metrics.update_memory_usage();
+            
             // Check for incremental scan opportunity
+            metrics.start_phase("file_discovery");
             let mut files_to_process = Vec::new();
             let mut incremental = false;
             
@@ -163,12 +180,16 @@ async fn main() -> Result<()> {
                 files_to_process = walker.walk()?;
             }
             
+            metrics.end_phase("file_discovery");
+            metrics.update_memory_usage();
+            
             if files_to_process.is_empty() {
                 println!("No files found to index");
                 return Ok(());
             }
             
             if !no_write {
+                metrics.start_phase("syntactic_analysis");
                 let store = GraphStore::new(&repo_root)?;
                 let commit_id = store.create_commit_snapshot(&commit_sha)?;
                 
@@ -179,8 +200,10 @@ async fn main() -> Result<()> {
                 let mut java_harness = JavaHarness::new()?;
                 let mut cpp_harness = CppHarness::new_cpp()?;
                 let mut c_harness = CppHarness::new_c()?;
+                let mut csharp_harness = CSharpHarness::new()?;
                 let mut total_symbols = 0;
                 let mut total_edges = 0;
+                let mut total_lines = 0;
                 
                 // If incremental, delete old data for files we're reprocessing
                 if incremental {
@@ -201,6 +224,8 @@ async fn main() -> Result<()> {
                     
                     let content = std::fs::read_to_string(file_path)?;
                     let hash = FileWalker::compute_file_hash(&content);
+                    let lines = content.lines().count();
+                    total_lines += lines;
                     
                     // Store file information
                     store.insert_file(commit_id, &relative_path, &hash, content.len())?;
@@ -386,73 +411,83 @@ async fn main() -> Result<()> {
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
+                    // Parse C# files
+                    else if relative_path.ends_with(".cs") {
+                        let (symbols, edges, occurrences) = csharp_harness.parse_file(
+                            &relative_path,
+                            &content
+                        )?;
+                        
+                        // Store symbols
+                        for symbol in &symbols {
+                            store.insert_symbol(commit_id, symbol)?;
+                        }
+                        
+                        // Store edges
+                        for edge in &edges {
+                            store.insert_edge(commit_id, edge)?;
+                        }
+                        
+                        // Store occurrences
+                        for occurrence in &occurrences {
+                            store.insert_occurrence(commit_id, occurrence)?;
+                        }
+                        
+                        total_symbols += symbols.len();
+                        total_edges += edges.len();
+                    }
                 }
+                
+                metrics.end_phase("syntactic_analysis");
+                metrics.record_lines_of_code(total_lines);
+                metrics.record_file_count("total", files_to_process.len());
+                metrics.record_symbol_count("total", total_symbols);
+                metrics.record_edge_count("total", total_edges);
+                metrics.update_memory_usage();
                 
                 // Run semantic analysis if enabled
                 if run_semantic {
+                    metrics.start_phase("semantic_analysis");
                     info!("Starting semantic analysis with SCIP indexers...");
                     
-                    // Initialize SCIP mapper
-                    let scip_mapper = ScipMapper::new(
-                        "scip-typescript",  // indexer name
-                        "0.3.16"  // version
-                    ).with_scip_cli_path("./scip".to_string());
+                    // Create resolution engine with store
+                    let store_for_resolution = GraphStore::new(&repo_root)?;
+                    let mut resolution_engine = ResolutionEngine::new(store_for_resolution);
                     
-                    // Check if this is a TypeScript/JavaScript project
-                    let has_ts_js = files_to_process.iter().any(|path| {
-                        path.to_string_lossy().ends_with(".ts") ||
-                        path.to_string_lossy().ends_with(".tsx") ||
-                        path.to_string_lossy().ends_with(".js") ||
-                        path.to_string_lossy().ends_with(".jsx")
-                    });
+                    // Choose between incremental and full semantic analysis
+                    let result = if incremental {
+                        info!("Running incremental semantic analysis");
+                        resolution_engine.resolve_project_incremental(&repo_root, &commit_sha).await
+                    } else {
+                        info!("Running full semantic analysis");
+                        resolution_engine.resolve_project(&repo_root, &commit_sha).await
+                    };
                     
-                    if has_ts_js {
-                        info!("TypeScript/JavaScript files detected, running semantic analysis");
-                        
-                        // Generate SCIP index
-                        match scip_mapper.run_scip_typescript(&repo_root.to_string_lossy()) {
-                            Ok(scip_file) => {
-                                info!("Generated SCIP index: {}", scip_file);
-                                
-                                // Parse and convert to IR
-                                match scip_mapper.parse_scip_index(&scip_file) {
-                                    Ok(scip_index) => {
-                                        match scip_mapper.map_scip_to_ir(&scip_index, &commit_sha) {
-                                            Ok((semantic_symbols, semantic_edges, semantic_occurrences)) => {
-                                                info!("SCIP analysis found {} symbols, {} edges, {} occurrences",
-                                                    semantic_symbols.len(), semantic_edges.len(), semantic_occurrences.len());
-                                                
-                                                // Store semantic data
-                                                for symbol in &semantic_symbols {
-                                                    store.insert_symbol(commit_id, symbol)?;
-                                                }
-                                                for edge in &semantic_edges {
-                                                    store.insert_edge(commit_id, edge)?;
-                                                }
-                                                for occurrence in &semantic_occurrences {
-                                                    store.insert_occurrence(commit_id, occurrence)?;
-                                                }
-                                                
-                                                total_symbols += semantic_symbols.len();
-                                                total_edges += semantic_edges.len();
-                                            },
-                                            Err(e) => info!("Failed to convert SCIP to IR: {}", e)
-                                        }
-                                    },
-                                    Err(e) => info!("Failed to parse SCIP index: {}", e)
-                                }
-                            },
-                            Err(e) => info!("Failed to generate SCIP index: {}", e)
+                    // Handle result
+                    match result {
+                        Ok(()) => {
+                            info!("Semantic analysis completed successfully");
+                        },
+                        Err(e) => {
+                            info!("Semantic analysis encountered errors: {}", e);
                         }
                     }
+                    
+                    metrics.end_phase("semantic_analysis");
+                    metrics.update_memory_usage();
                 }
                 
                 let action = if incremental { "Updated" } else { "Indexed" };
                 let analysis_type = if run_semantic { "semantic + syntactic" } else { "syntactic" };
                 info!("{} {} files, {} symbols, {} edges ({})", action, files_to_process.len(), total_symbols, total_edges, analysis_type);
                 println!("{} {} files, {} symbols, {} edges ({})", action, files_to_process.len(), total_symbols, total_edges, analysis_type);
+                
+                // Finalize and display performance metrics
+                let performance_metrics = metrics.finalize();
             } else {
                 println!("Found {} files (dry run)", files_to_process.len());
+                metrics.record_file_count("total", files_to_process.len());
+                let _ = metrics.finalize();
             }
         }
         
@@ -615,7 +650,8 @@ fn get_changed_files(repo_root: &PathBuf, from_commit: &str, to_commit: &str) ->
         .filter(|line| {
             line.ends_with(".ts") || line.ends_with(".tsx") ||
             line.ends_with(".js") || line.ends_with(".jsx") ||
-            line.ends_with(".py") || line.ends_with(".go")
+            line.ends_with(".py") || line.ends_with(".go") ||
+            line.ends_with(".cs")
         })
         .map(|s| s.to_string())
         .collect();

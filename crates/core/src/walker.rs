@@ -36,6 +36,8 @@ impl FileWalker {
         extensions.insert("hpp".to_string());
         extensions.insert("hh".to_string());
         extensions.insert("hxx".to_string());
+        // C#
+        extensions.insert("cs".to_string());
         
         Self { root, extensions }
     }

@@ -205,6 +205,7 @@ mod tests {
         SymbolIR {
             id: id.to_string(),
             lang: Language::TypeScript,
+            lang_version: None,
             kind: protocol::SymbolKind::Function,
             name: name.to_string(),
             fqn: format!("test.{}", name),

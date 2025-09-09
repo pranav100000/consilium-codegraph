@@ -8,6 +8,10 @@ authors.workspace = true
 name = "reviewbot"
 path = "src/main.rs"
 
+[lib]
+name = "reviewbot"
+path = "src/lib.rs"
+
 [dependencies]
 protocol = { path = "../protocol" }
 store = { path = "../store" }
@@ -17,6 +21,7 @@ go_harness = { path = "../go_harness" }
 rust_harness = { path = "../rust_harness" }
 java_harness = { path = "../java_harness" }
 cpp_harness = { path = "../cpp_harness" }
+csharp_harness = { path = "../csharp_harness" }
 scip_mapper = { path = "../scip_mapper" }
 clap = { workspace = true }
 tokio = { workspace = true }
@@ -32,6 +37,10 @@ parking_lot = { workspace = true }
 rustc-hash = { workspace = true }
 indexmap = { workspace = true }
 md5 = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3.14"
+rusqlite = { workspace = true }

@@ -67,7 +67,7 @@ mod tests {
             Ok(occurrences) => {
                 println!("✅ Successfully parsed {} occurrences", occurrences.len());
                 for (i, occ) in occurrences.iter().enumerate() {
-                    println!("  {}: {} (roles: {})", i, occ.symbol, occ.symbol_roles);
+                    println!("  {}: {} (roles: {:?})", i, occ.symbol, occ.symbol_roles);
                 }
             },
             Err(e) => {

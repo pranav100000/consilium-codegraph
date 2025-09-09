@@ -6,8 +6,12 @@ members = [
     "crates/ts_harness",
     "crates/py_harness",
     "crates/go_harness",
-    "crates/scip_mapper"
-, "crates/rust_harness", "crates/java_harness", "crates/cpp_harness"]
+    "crates/scip_mapper",
+    "crates/rust_harness",
+    "crates/java_harness",
+    "crates/cpp_harness",
+    "crates/csharp_harness"
+]
 resolver = "2"
 
 [workspace.package]

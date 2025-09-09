@@ -14,6 +14,7 @@ pub enum Language {
     Java,
     C,
     Cpp,
+    CSharp,
     Unknown,
 }
 

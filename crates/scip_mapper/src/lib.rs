@@ -44,15 +44,15 @@ pub struct ScipSymbol {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScipRelationship {
     pub symbol: String,
-    pub is_implementation: bool,
-    pub is_reference: bool,
+    pub is_implementation: Option<bool>,
+    pub is_reference: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScipOccurrence {
     pub range: Vec<i32>,
     pub symbol: String,
-    pub symbol_roles: i32,
+    pub symbol_roles: Option<i32>,
     pub enclosing_range: Option<Vec<i32>>,
 }
 
@@ -68,7 +68,7 @@ impl ScipMapper {
         
         Self { 
             provenance,
-            scip_cli_path: "scip".to_string(), // Use system PATH
+            scip_cli_path: "/Users/pranavsharan/go/bin/scip".to_string(), // Use Go-installed SCIP
         }
     }
     
@@ -87,6 +87,83 @@ impl ScipMapper {
         
         if !output.status.success() {
             anyhow::bail!("scip-typescript failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        
+        Ok(format!("{}/index.scip", project_path))
+    }
+    
+    pub fn run_scip_python(&self, project_path: &str) -> Result<String> {
+        info!("Running scip-python on {}", project_path);
+        
+        let output = Command::new("scip-python")
+            .args(["index", "."])
+            .current_dir(project_path)
+            .output()?;
+        
+        if !output.status.success() {
+            anyhow::bail!("scip-python failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        
+        Ok(format!("{}/index.scip", project_path))
+    }
+    
+    pub fn run_scip_go(&self, project_path: &str) -> Result<String> {
+        info!("Running scip-go on {}", project_path);
+        
+        let output = Command::new("scip-go")
+            .args(["."])
+            .current_dir(project_path)
+            .output()?;
+        
+        if !output.status.success() {
+            anyhow::bail!("scip-go failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        
+        Ok(format!("{}/index.scip", project_path))
+    }
+    
+    pub fn run_scip_rust(&self, project_path: &str) -> Result<String> {
+        info!("Running rust-analyzer with SCIP on {}", project_path);
+        
+        // Use rust-analyzer to generate SCIP index
+        let output = Command::new("rust-analyzer")
+            .args(["scip", "."])
+            .current_dir(project_path)
+            .output()?;
+        
+        if !output.status.success() {
+            anyhow::bail!("rust-analyzer scip failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        
+        Ok(format!("{}/index.scip", project_path))
+    }
+    
+    pub fn run_scip_java(&self, project_path: &str) -> Result<String> {
+        info!("Running scip-java on {}", project_path);
+        
+        let output = Command::new("scip-java")
+            .args(["index", "."])
+            .current_dir(project_path)
+            .output()?;
+        
+        if !output.status.success() {
+            anyhow::bail!("scip-java failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        
+        Ok(format!("{}/index.scip", project_path))
+    }
+    
+    pub fn run_scip_cpp(&self, project_path: &str) -> Result<String> {
+        info!("Running scip-clang on {}", project_path);
+        
+        // Using clang with SCIP plugin for C/C++
+        let output = Command::new("scip-clang")
+            .args(["--", "clang", "-c", "*.cpp", "*.c", "*.hpp", "*.h"])
+            .current_dir(project_path)
+            .output()?;
+        
+        if !output.status.success() {
+            anyhow::bail!("scip-clang failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         
         Ok(format!("{}/index.scip", project_path))
@@ -128,7 +205,7 @@ impl ScipMapper {
                     // Process relationships as edges
                     if let Some(rels) = &scip_sym.relationships {
                         for rel in rels {
-                            if let Some(edge) = self.convert_relationship(&scip_sym.symbol, &rel.symbol, rel.is_implementation) {
+                            if let Some(edge) = self.convert_relationship(&scip_sym.symbol, &rel.symbol, rel.is_implementation.unwrap_or(false)) {
                                 edges.push(edge);
                             }
                         }
@@ -215,12 +292,14 @@ impl ScipMapper {
     }
     
     fn convert_occurrence(&self, scip_occ: &ScipOccurrence, file_path: &str) -> Option<OccurrenceIR> {
-        // SCIP range format: [startLine, startCol, endLine, endCol]
-        if scip_occ.range.len() != 4 {
-            return None;
-        }
+        // SCIP range format: [startLine, startCol, endCol] or [startLine, startCol, endLine, endCol]
+        let (start_line, start_col, end_line, end_col) = match scip_occ.range.len() {
+            3 => (scip_occ.range[0], scip_occ.range[1], scip_occ.range[0], scip_occ.range[2]), // Same line
+            4 => (scip_occ.range[0], scip_occ.range[1], scip_occ.range[2], scip_occ.range[3]), // Multi-line
+            _ => return None, // Invalid range format
+        };
         
-        let role = match scip_occ.symbol_roles {
+        let role = match scip_occ.symbol_roles.unwrap_or(2) {
             1 => OccurrenceRole::Definition,
             2 => OccurrenceRole::Reference,
             4 => OccurrenceRole::Write,
@@ -232,10 +311,10 @@ impl ScipMapper {
             symbol_id: Some(scip_occ.symbol.clone()),
             role,
             span: Span {
-                start_line: scip_occ.range[0] as u32,
-                start_col: scip_occ.range[1] as u32,
-                end_line: scip_occ.range[2] as u32,
-                end_col: scip_occ.range[3] as u32,
+                start_line: start_line as u32,
+                start_col: start_col as u32,
+                end_line: end_line as u32,
+                end_col: end_col as u32,
             },
             token: String::new(), // Would need to extract from source
         })

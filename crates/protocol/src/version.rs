@@ -61,6 +61,14 @@ pub enum Version {
     Go120,
     Go121,
     
+    // .NET versions
+    DotNet5,
+    DotNet6,
+    DotNet7,
+    DotNet8,
+    DotNetFramework48,
+    DotNetCore31,
+    
     // Unknown/Auto-detect
     Auto,
     Unknown,
@@ -189,6 +197,12 @@ impl fmt::Display for Version {
             Version::Go119 => "Go 1.19",
             Version::Go120 => "Go 1.20",
             Version::Go121 => "Go 1.21",
+            Version::DotNet5 => ".NET 5",
+            Version::DotNet6 => ".NET 6",
+            Version::DotNet7 => ".NET 7",
+            Version::DotNet8 => ".NET 8",
+            Version::DotNetFramework48 => ".NET Framework 4.8",
+            Version::DotNetCore31 => ".NET Core 3.1",
             Version::Auto => "Auto-detect",
             Version::Unknown => "Unknown",
         };
