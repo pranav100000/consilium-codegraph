@@ -1,241 +1,262 @@
+#!/usr/bin/env python3
 """
-Pytest configuration and fixtures for agent_api tests
+Shared pytest configuration and fixtures for integration tests
 """
 
 import pytest
-import sqlite3
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Generator
+import sqlite3
+import os
+import sys
+
+# Add the parent directory to the path so we can import the API modules
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+
+@pytest.fixture(scope="session")
+def test_repo_path():
+    """Path to the test repository used for integration tests"""
+    return Path(__file__).parent.parent.parent / "test_ts_project"
 
 
 @pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for test files"""
-    temp = tempfile.mkdtemp()
-    yield Path(temp)
-    shutil.rmtree(temp)
+def temp_project():
+    """Create a temporary project directory for testing"""
+    temp_dir = tempfile.mkdtemp(prefix="consilium_test_")
+    project_path = Path(temp_dir)
+    
+    yield project_path
+    
+    # Cleanup
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture
-def mock_db(temp_dir: Path) -> Generator[Path, None, None]:
-    """Create a mock SQLite database with test data"""
-    db_dir = temp_dir / ".reviewbot"
-    db_dir.mkdir()
-    db_path = db_dir / "graph.db"
+def minimal_database(temp_project):
+    """Create a minimal test database"""
+    db_path = temp_project / ".reviewbot" / "graph.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
     
-    # Create tables matching Consilium schema
-    cursor.execute("""
+    # Create minimal schema
+    conn.executescript("""
         CREATE TABLE files (
             id INTEGER PRIMARY KEY,
             path TEXT NOT NULL,
-            hash TEXT,
-            language TEXT
-        )
-    """)
-    
-    cursor.execute("""
+            sha TEXT NOT NULL
+        );
+        
         CREATE TABLE symbols (
-            id INTEGER PRIMARY KEY,
-            file_id INTEGER,
-            fqn TEXT NOT NULL,
-            name TEXT NOT NULL,
+            id TEXT PRIMARY KEY,
+            lang TEXT NOT NULL,
             kind TEXT NOT NULL,
-            line INTEGER,
-            column INTEGER,
+            name TEXT NOT NULL,
+            fqn TEXT NOT NULL,
             signature TEXT,
-            docstring TEXT,
-            FOREIGN KEY (file_id) REFERENCES files(id)
-        )
-    """)
-    
-    cursor.execute("""
+            file_id INTEGER,
+            line INTEGER,
+            col INTEGER,
+            FOREIGN KEY(file_id) REFERENCES files(id)
+        );
+        
         CREATE TABLE edges (
-            id INTEGER PRIMARY KEY,
-            src TEXT NOT NULL,
-            dst TEXT NOT NULL,
             edge_type TEXT NOT NULL,
-            resolution TEXT
-        )
+            src TEXT,
+            dst TEXT,
+            file_src INTEGER,
+            file_dst INTEGER,
+            resolution TEXT NOT NULL
+        );
+        
+        CREATE TABLE occurrences (
+            file_path TEXT NOT NULL,
+            symbol_id TEXT,
+            role TEXT NOT NULL,
+            line INTEGER NOT NULL,
+            col INTEGER NOT NULL,
+            token TEXT NOT NULL
+        );
+        
+        -- Insert test data
+        INSERT INTO files VALUES (1, 'test.ts', 'abc123');
+        INSERT INTO symbols VALUES 
+            ('test.TestClass', 'TypeScript', 'class', 'TestClass', 'test.TestClass', NULL, 1, 1, 0),
+            ('test.testFunction', 'TypeScript', 'function', 'testFunction', 'test.testFunction', 'function testFunction(): void', 1, 5, 0);
+        INSERT INTO occurrences VALUES 
+            ('test.ts', 'test.TestClass', 'definition', 1, 0, 'TestClass'),
+            ('test.ts', 'test.testFunction', 'definition', 5, 0, 'testFunction');
     """)
-    
-    # Insert test data
-    cursor.execute("INSERT INTO files (id, path, language) VALUES (1, 'src/main.py', 'python')")
-    cursor.execute("INSERT INTO files (id, path, language) VALUES (2, 'src/auth.py', 'python')")
-    cursor.execute("INSERT INTO files (id, path, language) VALUES (3, 'src/database.py', 'python')")
-    
-    # Insert test symbols
-    test_symbols = [
-        (1, 1, "main", "main", "function", 10, 0, "def main()", None),
-        (2, 1, "process_data", "process_data", "function", 20, 0, "def process_data(data: str)", None),
-        (3, 2, "AuthService", "AuthService", "class", 5, 0, "class AuthService", None),
-        (4, 2, "AuthService::authenticate", "authenticate", "method", 10, 4, "def authenticate(user: str, password: str) -> bool", None),
-        (5, 2, "AuthService::validate_token", "validate_token", "method", 25, 4, "def validate_token(token: str) -> bool", None),
-        (6, 3, "Database", "Database", "class", 3, 0, "class Database", None),
-        (7, 3, "Database::query", "query", "method", 10, 4, "def query(sql: str, params: dict)", None),
-        (8, 3, "Database::execute", "execute", "method", 20, 4, "def execute(sql: str)", None),
-        (9, 2, "check_permission", "check_permission", "function", 40, 0, "def check_permission(user: str, resource: str)", None),
-        (10, 1, "complex_function", "complex_function", "function", 50, 0, "def complex_function(a, b, c, d, e, f)", None),
-    ]
-    
-    cursor.executemany("""
-        INSERT INTO symbols (id, file_id, fqn, name, kind, line, column, signature, docstring)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, test_symbols)
-    
-    # Insert test edges
-    test_edges = [
-        ("main", "process_data", "calls", "syntactic"),
-        ("process_data", "Database::query", "calls", "syntactic"),
-        ("AuthService::authenticate", "Database::query", "calls", "syntactic"),
-        ("AuthService::authenticate", "AuthService::validate_token", "calls", "syntactic"),
-        ("main", "AuthService::authenticate", "calls", "syntactic"),
-        ("check_permission", "Database::query", "calls", "syntactic"),
-        ("complex_function", "process_data", "calls", "syntactic"),
-        ("complex_function", "AuthService::authenticate", "calls", "syntactic"),
-        ("complex_function", "Database::execute", "calls", "syntactic"),
-        ("src/main.py", "src/auth.py", "imports", "syntactic"),
-        ("src/auth.py", "src/database.py", "imports", "syntactic"),
-    ]
-    
-    cursor.executemany("""
-        INSERT INTO edges (src, dst, edge_type, resolution)
-        VALUES (?, ?, ?, ?)
-    """, test_edges)
     
     conn.commit()
     conn.close()
     
-    yield db_path
+    return db_path
 
 
 @pytest.fixture
-def mock_repo(temp_dir: Path, mock_db: Path) -> Path:
-    """Create a mock repository with test files"""
-    # Create source files
-    src_dir = temp_dir / "src"
-    src_dir.mkdir()
+def sample_typescript_files(temp_project):
+    """Create sample TypeScript files for testing"""
+    files = {}
     
-    # main.py
-    (src_dir / "main.py").write_text("""
-def main():
-    data = get_input()
-    result = process_data(data)
-    return result
+    # Main file
+    main_content = """
+import { Helper } from './helper';
 
-def process_data(data: str):
-    db = Database()
-    return db.query("SELECT * FROM users WHERE name = " + data)
-
-def complex_function(a, b, c, d, e, f):
-    # This function is too complex
-    for i in range(10):
-        if a > b:
-            process_data(str(i))
-        else:
-            authenticate("user", "pass")
-    return None
-""")
+export class MainClass {
+    private helper: Helper;
     
-    # auth.py
-    (src_dir / "auth.py").write_text("""
-from database import Database
-
-class AuthService:
-    def authenticate(self, user: str, password: str) -> bool:
-        db = Database()
-        result = db.query(f"SELECT * FROM users WHERE name = {user}")
-        return self.validate_token(result)
+    constructor() {
+        this.helper = new Helper();
+    }
     
-    def validate_token(self, token: str) -> bool:
-        return token == "valid"
-
-def check_permission(user: str, resource: str):
-    db = Database()
-    return db.query(f"SELECT * FROM permissions WHERE user = {user}")
-""")
+    public doSomething(): string {
+        return this.helper.process('test');
+    }
+}
+"""
+    main_file = temp_project / "main.ts"
+    main_file.write_text(main_content)
+    files['main.ts'] = main_file
     
-    # database.py
-    (src_dir / "database.py").write_text("""
-class Database:
-    def query(self, sql: str, params: dict = None):
-        # Execute SQL query
-        return []
+    # Helper file
+    helper_content = """
+export class Helper {
+    public process(input: string): string {
+        return `Processed: ${input}`;
+    }
     
-    def execute(self, sql: str):
-        # Execute SQL command
-        pass
-""")
+    public validate(input: string): boolean {
+        return input.length > 0;
+    }
+}
+"""
+    helper_file = temp_project / "helper.ts"
+    helper_file.write_text(helper_content)
+    files['helper.ts'] = helper_file
     
-    return temp_dir
+    # Package.json
+    package_content = """
+{
+    "name": "test-project",
+    "version": "1.0.0",
+    "dependencies": {
+        "typescript": "^5.0.0"
+    }
+}
+"""
+    package_file = temp_project / "package.json"
+    package_file.write_text(package_content)
+    files['package.json'] = package_file
+    
+    return files
 
 
 @pytest.fixture
-def sample_symbols():
-    """Provide sample Symbol objects for testing"""
-    from agent_api.models import Symbol, SymbolKind, Location
+def sample_python_files(temp_project):
+    """Create sample Python files for testing"""
+    files = {}
     
-    return [
-        Symbol(
-            fqn="AuthService::authenticate",
-            name="authenticate",
-            kind=SymbolKind.METHOD,
-            location=Location(file="src/auth.py", line=10),
-            signature="def authenticate(user: str, password: str) -> bool",
-            analyzer="test",
-            confidence=1.0
-        ),
-        Symbol(
-            fqn="Database::query",
-            name="query",
-            kind=SymbolKind.METHOD,
-            location=Location(file="src/database.py", line=10),
-            signature="def query(sql: str, params: dict)",
-            analyzer="test",
-            confidence=1.0
-        ),
-        Symbol(
-            fqn="process_data",
-            name="process_data",
-            kind=SymbolKind.FUNCTION,
-            location=Location(file="src/main.py", line=20),
-            signature="def process_data(data: str)",
-            analyzer="test",
-            confidence=1.0
-        ),
-    ]
+    # Main file
+    main_content = """
+from helper import Helper
+
+class MainClass:
+    def __init__(self):
+        self.helper = Helper()
+    
+    def do_something(self) -> str:
+        return self.helper.process('test')
+"""
+    main_file = temp_project / "main.py"
+    main_file.write_text(main_content)
+    files['main.py'] = main_file
+    
+    # Helper file
+    helper_content = """
+class Helper:
+    def process(self, input_str: str) -> str:
+        return f"Processed: {input_str}"
+    
+    def validate(self, input_str: str) -> bool:
+        return len(input_str) > 0
+"""
+    helper_file = temp_project / "helper.py"
+    helper_file.write_text(helper_content)
+    files['helper.py'] = helper_file
+    
+    return files
+
+
+@pytest.fixture(autouse=True)
+def cleanup_environment():
+    """Ensure clean environment for each test"""
+    # Store original environment
+    original_env = os.environ.copy()
+    
+    yield
+    
+    # Restore original environment
+    os.environ.clear()
+    os.environ.update(original_env)
+
+
+def pytest_configure(config):
+    """Configure pytest"""
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
+    config.addinivalue_line(
+        "markers", "integration: marks tests as integration tests"
+    )
+    config.addinivalue_line(
+        "markers", "unit: marks tests as unit tests"
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Modify test collection to add markers"""
+    for item in items:
+        # Mark integration tests
+        if "integration" in item.nodeid:
+            item.add_marker(pytest.mark.integration)
+        
+        # Mark slow tests
+        if any(keyword in item.name.lower() for keyword in ['performance', 'stress', 'large', 'concurrent']):
+            item.add_marker(pytest.mark.slow)
 
 
 @pytest.fixture
-def sample_security_issues():
-    """Provide sample SecurityIssue objects for testing"""
-    from agent_api.models import SecurityIssue, Severity, Location
-    
-    return [
-        SecurityIssue(
-            issue_id="sql_injection_001",
-            type="sql_injection",
-            severity=Severity.CRITICAL,
-            location=Location(file="src/auth.py", line=6),
-            description="SQL injection vulnerability in authenticate method",
-            evidence=["db.query(f\"SELECT * FROM users WHERE name = {user}\")"],
-            fix_suggestion="Use parameterized queries",
-            confidence=0.9,
-            cwe_id="CWE-89"
-        ),
-        SecurityIssue(
-            issue_id="missing_auth_001",
-            type="missing_authentication",
-            severity=Severity.HIGH,
-            location=Location(file="src/main.py", line=10),
-            description="Endpoint lacks authentication check",
-            evidence=["No auth decorator found"],
-            fix_suggestion="Add authentication middleware",
-            confidence=0.8,
-            cwe_id="CWE-306"
-        ),
-    ]
+def mock_scip_output():
+    """Mock SCIP output for testing"""
+    return {
+        "metadata": {
+            "tool_info": {
+                "name": "scip-typescript",
+                "version": "0.3.16"
+            },
+            "project_root": "/test/project",
+            "text_document_encoding": 1
+        },
+        "documents": [
+            {
+                "relative_path": "main.ts",
+                "symbols": [
+                    {
+                        "symbol": "scip-typescript npm . . `main.ts`/MainClass#",
+                        "documentation": ["Main application class"],
+                        "relationships": []
+                    }
+                ],
+                "occurrences": [
+                    {
+                        "range": [5, 13, 22],
+                        "symbol": "scip-typescript npm . . `main.ts`/MainClass#",
+                        "symbol_roles": 1
+                    }
+                ]
+            }
+        ]
+    }

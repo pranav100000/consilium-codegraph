@@ -35,7 +35,8 @@ class CodeGraphAPI:
     """
     
     def __init__(self, repo_path: str, db_path: Optional[str] = None, 
-                 check_same_thread: bool = True, timeout: float = 10.0):
+                 check_same_thread: bool = True, timeout: float = 10.0,
+                 semantic: bool = True):
         """
         Initialize the API for a repository.
         
@@ -44,6 +45,7 @@ class CodeGraphAPI:
             db_path: Path to the graph database (default: .reviewbot/graph.db)
             check_same_thread: If False, allows multi-threaded access (default: True)
             timeout: Database lock timeout in seconds (default: 10.0)
+            semantic: Whether to recommend semantic analysis (default: True)
         """
         self.repo_path = Path(repo_path)
         if db_path is None:
@@ -51,7 +53,8 @@ class CodeGraphAPI:
         self.db_path = Path(db_path)
         
         if not self.db_path.exists():
-            raise FileNotFoundError(f"Database not found at {self.db_path}. Run 'reviewbot scan' first.")
+            scan_cmd = "reviewbot scan --semantic" if semantic else "reviewbot scan"
+            raise FileNotFoundError(f"Database not found at {self.db_path}. Run '{scan_cmd}' first.")
         
         # Support concurrent access with proper timeout
         self.conn = sqlite3.connect(

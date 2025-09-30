@@ -4,7 +4,7 @@ use std::fs;
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use store::GraphStore;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use scip_mapper::ScipMapper;
 use crate::language_strategy::LanguageStrategyRegistry;
 
@@ -46,37 +46,56 @@ impl ResolutionEngine {
             .collect::<Vec<_>>()
             .join(", "));
         
-        // Process each detected language
+        // Process each detected language and track results
+        let mut successes = 0;
+        let mut failures = Vec::new();
+
         for lang in strategy_langs {
             let lang_name = format!("{:?}", lang);
             info!("Processing {} files", lang_name);
-            
+
             // Process based on language type
             match self.process_language(lang, project_path, commit_sha).await {
                 Ok(()) => {
                     info!("Successfully processed {} semantic analysis", lang_name);
+                    successes += 1;
                 }
                 Err(e) => {
                     info!("Failed to process {} semantic analysis: {}", lang_name, e);
+                    failures.push((lang_name, e.to_string()));
                     // Continue with other languages even if one fails
                 }
             }
         }
-        
-        Ok(())
+
+        // Provide summary and appropriate result
+        if failures.is_empty() {
+            info!("Semantic analysis completed successfully: {} languages processed", successes);
+            Ok(())
+        } else if successes > 0 {
+            warn!("Semantic analysis completed with partial failures: {} succeeded, {} failed", successes, failures.len());
+            for (lang, error) in failures {
+                warn!("  {} failed: {}", lang, error);
+            }
+            Ok(()) // Still return success if some languages worked
+        } else {
+            let error_msg = format!("Semantic analysis failed completely: all {} languages failed", failures.len());
+            error!("{}", error_msg);
+            Err(anyhow::anyhow!(error_msg))
+        }
     }
 
     pub async fn resolve_project_incremental(&mut self, project_path: &Path, commit_sha: &str) -> Result<()> {
         info!("Starting incremental cross-file symbol resolution for project");
-        
+
         // Detect languages and get their file lists
         let strategies = self.language_registry.detect_languages(project_path);
-        
+
         if strategies.is_empty() {
             info!("No supported languages detected in project");
             return Ok(());
         }
-        
+
         // Build file lists for each language
         let mut language_files: HashMap<protocol::Language, Vec<std::path::PathBuf>> = HashMap::new();
         for strategy in &strategies {
@@ -85,42 +104,61 @@ impl ResolutionEngine {
                 language_files.insert(strategy.language(), files);
             }
         }
-        
+
         info!("Detected {} languages with files to process", language_files.len());
-        
+
         // Check which files have changed since last processing
         let changed_files = self.detect_changed_files(project_path, commit_sha, &language_files).await?;
-        
+
         if changed_files.is_empty() {
             info!("No files have changed - skipping semantic processing");
             return Ok(());
         }
-        
+
         info!("Found {} changed files requiring semantic reprocessing", changed_files.len());
-        
-        // Process only languages that have changed files
+
+        // Process only languages that have changed files and track results
+        let mut successes = 0;
+        let mut failures = Vec::new();
+
         for (lang, files) in changed_files {
             if !files.is_empty() {
                 let lang_name = format!("{:?}", lang);
                 info!("Processing {} changed {} files", files.len(), lang_name);
-                
+
                 // Clean up old semantic data for changed files
                 self.cleanup_old_semantic_data(commit_sha, &files).await?;
-                
+
                 // Process the language with only changed files
                 match self.process_language_files(lang, project_path, commit_sha, &files).await {
                     Ok(()) => {
                         info!("Successfully processed {} incremental semantic analysis", lang_name);
+                        successes += 1;
                     }
                     Err(e) => {
-                        warn!("Failed to process {} incremental semantic analysis: {}", lang_name, e);
+                        info!("Failed to process {} incremental semantic analysis: {}", lang_name, e);
+                        failures.push((lang_name, e.to_string()));
                         // Continue with other languages even if one fails
                     }
                 }
             }
         }
-        
-        Ok(())
+
+        // Provide summary and appropriate result
+        if failures.is_empty() {
+            info!("Incremental semantic analysis completed successfully: {} languages processed", successes);
+            Ok(())
+        } else if successes > 0 {
+            warn!("Incremental semantic analysis completed with partial failures: {} succeeded, {} failed", successes, failures.len());
+            for (lang, error) in failures {
+                warn!("  {} failed: {}", lang, error);
+            }
+            Ok(()) // Still return success if some languages worked
+        } else {
+            let error_msg = format!("Incremental semantic analysis failed completely: all {} languages failed", failures.len());
+            error!("{}", error_msg);
+            Err(anyhow::anyhow!(error_msg))
+        }
     }
     
     async fn process_language(

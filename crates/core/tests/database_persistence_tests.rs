@@ -277,9 +277,13 @@ fn test_fts5_full_text_search_advanced() -> Result<()> {
 fn test_incremental_data_updates() -> Result<()> {
     let (store, _temp_dir) = create_test_store()?;
     
-    // Simulate incremental updates across multiple commits
+    // Simulate incremental updates across multiple commits with small delays to ensure different timestamps
     let commit1 = store.get_or_create_commit("commit_1")?;
+    std::thread::sleep(std::time::Duration::from_millis(1));
+
     let commit2 = store.get_or_create_commit("commit_2")?;
+    std::thread::sleep(std::time::Duration::from_millis(1));
+
     let commit3 = store.get_or_create_commit("commit_3")?;
     
     // Commit 1: Initial state

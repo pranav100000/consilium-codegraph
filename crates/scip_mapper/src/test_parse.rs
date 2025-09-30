@@ -1,9 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use crate::{ScipOccurrence, ScipIndex, ScipMapper};
+    use crate::ScipOccurrence;
+    #[allow(unused_imports)]
+    use crate::{ScipIndex, ScipMapper};
     use serde_json;
 
     #[test]
+    #[ignore] // Requires external test file - run with: cargo test -- --ignored
     fn test_full_scip_index_parsing() {
         // Test JSON parsing directly since we don't have scip CLI
         let json_data = std::fs::read_to_string("/Users/pranavsharan/Developer/consilium-codegraph/test_scip_index.json")
@@ -28,6 +31,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires external test file - run with: cargo test -- --ignored
     fn test_scip_full_document_parsing() {
         let json_data = std::fs::read_to_string("/tmp/test_document.json")
             .expect("Could not read test document");

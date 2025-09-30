@@ -21,18 +21,20 @@ class CodeGraph:
     Integrates multiple analyzers and provides unified access.
     """
     
-    def __init__(self, repo_path: str, db_path: Optional[str] = None):
+    def __init__(self, repo_path: str, db_path: Optional[str] = None, semantic: bool = True):
         """
         Initialize the code graph for a repository.
         
         Args:
             repo_path: Path to the repository root
             db_path: Path to the graph database (default: .reviewbot/graph.db)
+            semantic: Whether to enable semantic analysis with SCIP indexers (default: True)
         """
         self.repo_path = Path(repo_path)
         if db_path is None:
             db_path = self.repo_path / ".reviewbot" / "graph.db"
         self.db_path = Path(db_path)
+        self.semantic = semantic
         
         # Initialize connections
         self._init_database()
@@ -54,9 +56,15 @@ class CodeGraph:
         
     def _run_initial_scan(self):
         """Run consilium scan to build initial graph"""
-        print(f"Building code graph for {self.repo_path}...")
+        analysis_type = "semantic + syntactic" if self.semantic else "syntactic only"
+        print(f"Building code graph for {self.repo_path} ({analysis_type})...")
+        
+        cmd = ["cargo", "run", "--", "--repo", str(self.repo_path), "scan"]
+        if self.semantic:
+            cmd.append("--semantic")
+        
         result = subprocess.run(
-            ["cargo", "run", "--", "--repo", str(self.repo_path), "scan"],
+            cmd,
             cwd=Path(__file__).parent.parent / "crates" / "core",
             capture_output=True,
             text=True

@@ -239,20 +239,39 @@ impl ScipMapper {
             .trim_end_matches('#')
             .split('/')
             .next_back()?
+            .split('#')  // Also split by # to get the actual symbol name
+            .next_back()?
             .to_string();
+
+        // Reject symbols with empty names
+        if name.is_empty() {
+            return None;
+        }
         
-        // Determine kind based on symbol format
-        let kind = if symbol_path.contains("#") {
+        // Determine kind based on symbol format and name patterns
+        let kind = if symbol_path.ends_with("()") || symbol_path.contains("().") {
+            // Functions and methods end with ()
+            if symbol_path.contains("#") {
+                SymbolKind::Method  // Class member method
+            } else {
+                SymbolKind::Function  // Top-level function
+            }
+        } else if symbol_path.ends_with("#") {
+            // Classes end with just #
             SymbolKind::Class
-        } else if symbol_path.contains("().") {
-            SymbolKind::Function
-        } else if symbol_path.ends_with("()") {
-            SymbolKind::Method
+        } else if symbol_path.contains("#") && !symbol_path.ends_with("#") {
+            // Class members that are not methods are typically fields/properties
+            SymbolKind::Field
+        } else if name.chars().next().unwrap_or('a').is_uppercase() {
+            // Uppercase names are likely classes/types
+            SymbolKind::Class
         } else {
             SymbolKind::Variable
         };
         
-        let fqn = format!("{}.{}", file_path.trim_end_matches(".ts").trim_end_matches(".tsx"), name);
+        let fqn = format!("{}.{}",
+            file_path.trim_end_matches(".ts").trim_end_matches(".tsx").replace("/", "."),
+            name);
         let sig_hash = format!("{:x}", name.len());
         let id = SymbolIR::generate_id(commit_sha, file_path, &Language::TypeScript, &fqn, &sig_hash);
         

@@ -2,7 +2,7 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct FileWalker {
     root: PathBuf,
@@ -54,7 +54,27 @@ impl FileWalker {
             .build();
         
         for entry in walker {
-            let entry = entry?;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    // Handle permission denied and other IO errors gracefully
+                    if let Some(io_err) = e.io_error() {
+                        match io_err.kind() {
+                            std::io::ErrorKind::PermissionDenied => {
+                                warn!("Permission denied accessing file/directory, skipping: {}", e);
+                                continue; // Skip inaccessible files
+                            }
+                            _ => {
+                                debug!("IO error walking file system: {}", e);
+                                continue; // Skip other IO errors
+                            }
+                        }
+                    } else {
+                        // Other errors (not IO errors) should be propagated
+                        return Err(e.into());
+                    }
+                }
+            };
             let path = entry.path();
             
             if path.is_file() {

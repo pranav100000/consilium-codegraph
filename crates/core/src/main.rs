@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
     });
     
     match cli.command {
-        Commands::Scan { no_write, semantic, no_semantic, incremental, .. } => {
+        Commands::Scan { no_write, semantic, no_semantic, incremental: _, .. } => {
             let mut metrics = MetricsCollector::new();
             metrics.start_phase("initialization");
             
@@ -145,28 +145,44 @@ async fn main() -> Result<()> {
             if !no_write {
                 let store = GraphStore::new(&repo_root)?;
                 if let Some(last_commit) = store.get_last_scanned_commit()? {
+                    let mut changed = Vec::new();
+
                     if last_commit != commit_sha {
-                        // Get changed files since last scan
-                        let changed = get_changed_files(&repo_root, &last_commit, &commit_sha)?;
-                        if !changed.is_empty() && changed.len() < 100 {  // Arbitrary threshold
-                            info!("Incremental scan: {} files changed since {}", changed.len(), &last_commit[0..7]);
-                            
-                            // Get impacted files (files that import changed files)
-                            let mut impacted = std::collections::HashSet::new();
-                            for file in &changed {
-                                impacted.insert(file.clone());
-                                for dependent in store.get_file_dependents(file)? {
-                                    impacted.insert(dependent);
-                                }
+                        // Get committed changes since last scan
+                        let committed_changes = get_changed_files(&repo_root, &last_commit, &commit_sha)?;
+                        changed.extend(committed_changes);
+                        info!("Found {} committed changes since {}", changed.len(), &last_commit[0..7]);
+                    }
+
+                    // Always check for uncommitted changes (working directory)
+                    let uncommitted_changes = get_uncommitted_changes(&repo_root)?;
+                    if !uncommitted_changes.is_empty() {
+                        info!("Found {} uncommitted changes in working directory", uncommitted_changes.len());
+                        changed.extend(uncommitted_changes);
+                    }
+
+                    // Remove duplicates
+                    changed.sort();
+                    changed.dedup();
+
+                    if !changed.is_empty() && changed.len() < 100 {  // Arbitrary threshold
+                        info!("Incremental scan: {} total files changed", changed.len());
+
+                        // Get impacted files (files that import changed files)
+                        let mut impacted = std::collections::HashSet::new();
+                        for file in &changed {
+                            impacted.insert(file.clone());
+                            for dependent in store.get_file_dependents(file)? {
+                                impacted.insert(dependent);
                             }
-                            
-                            files_to_process = impacted.into_iter()
-                                .map(|f| repo_root.join(&f))
-                                .collect();
-                            incremental = true;
-                            info!("Total files to reprocess (including dependents): {}", files_to_process.len());
                         }
-                    } else {
+
+                        files_to_process = impacted.into_iter()
+                            .map(|f| repo_root.join(&f))
+                            .collect();
+                        incremental = true;
+                        info!("Total files to reprocess (including dependents): {}", files_to_process.len());
+                    } else if changed.is_empty() {
                         info!("Repository unchanged since last scan");
                         println!("Repository unchanged since last scan");
                         return Ok(());
@@ -483,7 +499,7 @@ async fn main() -> Result<()> {
                 println!("{} {} files, {} symbols, {} edges ({})", action, files_to_process.len(), total_symbols, total_edges, analysis_type);
                 
                 // Finalize and display performance metrics
-                let performance_metrics = metrics.finalize();
+                let _performance_metrics = metrics.finalize();
             } else {
                 println!("Found {} files (dry run)", files_to_process.len());
                 metrics.record_file_count("total", files_to_process.len());
@@ -639,12 +655,12 @@ fn get_changed_files(repo_root: &PathBuf, from_commit: &str, to_commit: &str) ->
         .args(["diff", "--name-only", &format!("{}..{}", from_commit, to_commit)])
         .current_dir(repo_root)
         .output()?;
-    
+
     if !output.status.success() {
         // Fallback to all files if diff fails
         return Ok(Vec::new());
     }
-    
+
     let files = String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter(|line| {
@@ -655,6 +671,56 @@ fn get_changed_files(repo_root: &PathBuf, from_commit: &str, to_commit: &str) ->
         })
         .map(|s| s.to_string())
         .collect();
-    
+
+    Ok(files)
+}
+
+fn get_uncommitted_changes(repo_root: &PathBuf) -> Result<Vec<String>> {
+    // Get modified and staged files
+    let output = std::process::Command::new("git")
+        .args(["diff", "--name-only", "HEAD"])
+        .current_dir(repo_root)
+        .output()?;
+
+    let mut files = Vec::new();
+
+    if output.status.success() {
+        files.extend(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| {
+                line.ends_with(".ts") || line.ends_with(".tsx") ||
+                line.ends_with(".js") || line.ends_with(".jsx") ||
+                line.ends_with(".py") || line.ends_with(".go") ||
+                line.ends_with(".cs") || line.ends_with(".rs") ||
+                line.ends_with(".java") || line.ends_with(".cpp") ||
+                line.ends_with(".c") || line.ends_with(".h")
+            })
+            .map(|s| s.to_string()));
+    }
+
+    // Also get untracked files that match our patterns
+    let output = std::process::Command::new("git")
+        .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(repo_root)
+        .output()?;
+
+    if output.status.success() {
+        files.extend(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| {
+                line.ends_with(".ts") || line.ends_with(".tsx") ||
+                line.ends_with(".js") || line.ends_with(".jsx") ||
+                line.ends_with(".py") || line.ends_with(".go") ||
+                line.ends_with(".cs") || line.ends_with(".rs") ||
+                line.ends_with(".java") || line.ends_with(".cpp") ||
+                line.ends_with(".c") || line.ends_with(".h")
+            })
+            .map(|s| s.to_string()));
+    }
+
+    // Remove duplicates
+    files.sort();
+    files.dedup();
+
     Ok(files)
 }

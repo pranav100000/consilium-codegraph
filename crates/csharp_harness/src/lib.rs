@@ -4,8 +4,7 @@
 //! for the Consilium Codegraph system.
 
 use anyhow::{anyhow, Result};
-use protocol::{EdgeIR, EdgeType, Language, OccurrenceIR, Resolution, Span, SymbolIR, SymbolKind, Version};
-use std::collections::HashMap;
+use protocol::{EdgeIR, Language, OccurrenceIR, Span, SymbolIR, SymbolKind, Version};
 use tree_sitter::{Parser, Tree};
 
 pub struct CSharpHarness {

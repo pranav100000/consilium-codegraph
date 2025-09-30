@@ -565,7 +565,7 @@ impl TypeScriptHarness {
         commit_sha: &str,
         source: &[u8],
     ) -> SymbolIR {
-        let fqn = format!("{}/{}", file_path.trim_end_matches(".ts").trim_end_matches(".tsx").trim_end_matches(".js"), name);
+        let fqn = format!("{}.{}", file_path.trim_end_matches(".ts").trim_end_matches(".tsx").trim_end_matches(".js"), name);
         let sig_hash = format!("{:x}", name.len()); // Simple hash for now
         
         let id = SymbolIR::generate_id(commit_sha, file_path, &lang, &fqn, &sig_hash);

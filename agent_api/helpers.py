@@ -20,14 +20,15 @@ class AgentHelpers:
     These are designed to be intuitive for LLM agents to use.
     """
     
-    def __init__(self, repo_path: str):
+    def __init__(self, repo_path: str, semantic: bool = True):
         """
         Initialize helpers for a repository.
         
         Args:
             repo_path: Path to the repository root
+            semantic: Whether to enable semantic analysis (default: True)
         """
-        self.graph = CodeGraph(repo_path)
+        self.graph = CodeGraph(repo_path, semantic=semantic)
         self.analyzer = CodeAnalyzer(self.graph)
     
     def explain_function(self, symbol: str) -> FunctionExplanation:
