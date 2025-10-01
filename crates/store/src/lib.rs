@@ -275,6 +275,132 @@ impl GraphStore {
             Ok(())
         }, 3)
     }
+
+    /// Batch insert symbols in a single transaction for better performance
+    pub fn batch_insert_symbols(&self, commit_id: i64, symbols: &[SymbolIR]) -> Result<()> {
+        if symbols.is_empty() {
+            return Ok(());
+        }
+
+        let connection = self.conn.lock().map_err(|e| {
+            anyhow::anyhow!("Failed to acquire connection lock: {}", e)
+        })?;
+
+        let tx = connection.unchecked_transaction()?;
+
+        for symbol in symbols {
+            // Validate symbol has non-empty name and FQN
+            if symbol.name.is_empty() || symbol.fqn.is_empty() {
+                return Err(anyhow::anyhow!("Symbol name and FQN cannot be empty"));
+            }
+
+            let lang_str = serde_json::to_string(&symbol.lang)?;
+            let kind_str = serde_json::to_string(&symbol.kind)?;
+            let visibility_str = symbol.visibility.as_ref().map(serde_json::to_string).transpose()?;
+
+            tx.execute(
+                r#"INSERT OR REPLACE INTO symbol
+                (commit_id, symbol_id, lang, kind, name, fqn, signature,
+                 file_path, span_start_line, span_start_col, span_end_line,
+                 span_end_col, visibility, doc, sig_hash)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"#,
+                params![
+                    commit_id,
+                    symbol.id,
+                    lang_str,
+                    kind_str,
+                    symbol.name,
+                    symbol.fqn,
+                    symbol.signature,
+                    symbol.file_path,
+                    symbol.span.start_line,
+                    symbol.span.start_col,
+                    symbol.span.end_line,
+                    symbol.span.end_col,
+                    visibility_str,
+                    symbol.doc,
+                    symbol.sig_hash,
+                ]
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Batch insert edges in a single transaction for better performance
+    pub fn batch_insert_edges(&self, commit_id: i64, edges: &[EdgeIR]) -> Result<()> {
+        if edges.is_empty() {
+            return Ok(());
+        }
+
+        let connection = self.conn.lock().map_err(|e| {
+            anyhow::anyhow!("Failed to acquire connection lock: {}", e)
+        })?;
+
+        let tx = connection.unchecked_transaction()?;
+
+        for edge in edges {
+            let edge_type_str = serde_json::to_string(&edge.edge_type)?;
+            let resolution_str = serde_json::to_string(&edge.resolution)?;
+
+            tx.execute(
+                r#"INSERT INTO edge
+                (commit_id, edge_type, src_symbol, dst_symbol, file_src, file_dst, resolution)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+                params![
+                    commit_id,
+                    edge_type_str,
+                    edge.src,
+                    edge.dst,
+                    edge.file_src,
+                    edge.file_dst,
+                    resolution_str,
+                ]
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Batch insert occurrences in a single transaction for better performance
+    pub fn batch_insert_occurrences(&self, commit_id: i64, occurrences: &[OccurrenceIR]) -> Result<()> {
+        if occurrences.is_empty() {
+            return Ok(());
+        }
+
+        let connection = self.conn.lock().map_err(|e| {
+            anyhow::anyhow!("Failed to acquire connection lock: {}", e)
+        })?;
+
+        let tx = connection.unchecked_transaction()?;
+
+        for occurrence in occurrences {
+            let role_str = serde_json::to_string(&occurrence.role)?;
+
+            tx.execute(
+                r#"INSERT INTO occurrence
+                (commit_id, file_path, symbol_id, role, span_start_line,
+                 span_start_col, span_end_line, span_end_col, token)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+                params![
+                    commit_id,
+                    occurrence.file_path,
+                    occurrence.symbol_id,
+                    role_str,
+                    occurrence.span.start_line,
+                    occurrence.span.start_col,
+                    occurrence.span.end_line,
+                    occurrence.span.end_col,
+                    occurrence.token,
+                ]
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
     
     pub fn get_latest_commit(&self) -> Result<Option<String>> {
         execute_with_retry(&self.conn, |connection| {

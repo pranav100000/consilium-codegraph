@@ -254,22 +254,12 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &commit_sha
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
@@ -280,22 +270,12 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &commit_sha
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
@@ -306,22 +286,12 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &commit_sha
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
@@ -331,22 +301,12 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &content
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
@@ -356,49 +316,29 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &content
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
                     // Parse C++ files
-                    else if relative_path.ends_with(".cpp") || relative_path.ends_with(".cc") 
-                        || relative_path.ends_with(".cxx") || relative_path.ends_with(".hpp") 
+                    else if relative_path.ends_with(".cpp") || relative_path.ends_with(".cc")
+                        || relative_path.ends_with(".cxx") || relative_path.ends_with(".hpp")
                         || relative_path.ends_with(".hh") || relative_path.ends_with(".hxx") {
                         let (symbols, edges, occurrences) = cpp_harness.parse(
                             &relative_path,
                             &content
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
@@ -408,22 +348,12 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &content
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
@@ -433,22 +363,12 @@ async fn main() -> Result<()> {
                             &relative_path,
                             &content
                         )?;
-                        
-                        // Store symbols
-                        for symbol in &symbols {
-                            store.insert_symbol(commit_id, symbol)?;
-                        }
-                        
-                        // Store edges
-                        for edge in &edges {
-                            store.insert_edge(commit_id, edge)?;
-                        }
-                        
-                        // Store occurrences
-                        for occurrence in &occurrences {
-                            store.insert_occurrence(commit_id, occurrence)?;
-                        }
-                        
+
+                        // Batch insert for better performance
+                        store.batch_insert_symbols(commit_id, &symbols)?;
+                        store.batch_insert_edges(commit_id, &edges)?;
+                        store.batch_insert_occurrences(commit_id, &occurrences)?;
+
                         total_symbols += symbols.len();
                         total_edges += edges.len();
                     }
