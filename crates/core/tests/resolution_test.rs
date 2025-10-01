@@ -92,10 +92,13 @@ func main() {
         .args(&["run", "--bin", "reviewbot", "--", "--repo", &project_path.to_string_lossy(), "scan", "--semantic"])
         .output()?;
     
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Check that files were processed
-    assert!(stdout.contains("3 files") || stdout.contains("Indexed"));
-    
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(project_path)?;
+    let file_count = store.get_file_count()?;
+
+    assert_eq!(file_count, 3,
+        "Should process 3 files (app.ts, test.py, main.go)");
+
     Ok(())
 }

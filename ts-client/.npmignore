@@ -1,0 +1,27 @@
+# Source files
+src/
+tests/
+examples/
+
+# Config files
+tsconfig.json
+vitest.config.ts
+.eslintrc.json
+.prettierrc.json
+
+# Development
+node_modules/
+coverage/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Documentation (keep README)
+MIGRATION.md
+CHANGELOG.md
+
+# OS files
+.DS_Store
+Thumbs.db

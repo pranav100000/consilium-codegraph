@@ -13,7 +13,8 @@ fn bench_scip_parsing_performance() -> Result<()> {
     let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16");
     
     // Test TypeScript SCIP parsing
-    let ts_scip_path = "/Users/pranavsharan/Developer/consilium-codegraph/test_ts_project/index.scip";
+    // Use relative path from project root (where tests are run)
+    let ts_scip_path = "test_ts_project/index.scip";
     if Path::new(ts_scip_path).exists() {
         println!("\n🚀 TypeScript SCIP Processing:");
         
@@ -58,7 +59,8 @@ fn bench_scip_parsing_performance() -> Result<()> {
     }
     
     // Test Python SCIP parsing
-    let py_scip_path = "/Users/pranavsharan/Developer/consilium-codegraph/test_python_project/index.scip";
+    // Use relative path from project root (where tests are run)
+    let py_scip_path = "test_python_project/index.scip";
     if Path::new(py_scip_path).exists() {
         println!("\n🐍 Python SCIP Processing:");
         
@@ -111,8 +113,9 @@ fn bench_scip_large_file_performance() -> Result<()> {
     println!("🔍 Large SCIP File Performance Test");
     
     // Find the larger SCIP file to test with
-    let ts_scip_path = "/Users/pranavsharan/Developer/consilium-codegraph/test_ts_project/index.scip";
-    let py_scip_path = "/Users/pranavsharan/Developer/consilium-codegraph/test_python_project/index.scip";
+    // Use relative paths from project root (where tests are run)
+    let ts_scip_path = "test_ts_project/index.scip";
+    let py_scip_path = "test_python_project/index.scip";
     
     let mut test_file = None;
     let mut test_lang = "";

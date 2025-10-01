@@ -22,8 +22,7 @@ fn test_scip_typescript_integration() -> Result<()> {
     create_typescript_test_files(repo_path)?;
     
     // Initialize SCIP mapper
-    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16")
-        .with_scip_cli_path("/Users/pranavsharan/go/bin/scip".to_string());
+    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16");
     
     // Generate SCIP index
     let scip_file = scip_mapper.run_scip_typescript(&repo_path.to_string_lossy())?;
@@ -61,8 +60,7 @@ fn test_semantic_symbol_storage() -> Result<()> {
     let store = GraphStore::new(repo_path)?;
     let commit_id = store.get_or_create_commit("test_commit")?;
     
-    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16")
-        .with_scip_cli_path("/Users/pranavsharan/go/bin/scip".to_string());
+    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16");
     
     // Run semantic analysis
     let scip_file = scip_mapper.run_scip_typescript(&repo_path.to_string_lossy())?;
@@ -104,8 +102,7 @@ fn test_cross_file_semantic_resolution() -> Result<()> {
     let store = GraphStore::new(repo_path)?;
     let commit_id = store.get_or_create_commit("test_commit")?;
     
-    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16")
-        .with_scip_cli_path("/Users/pranavsharan/go/bin/scip".to_string());
+    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16");
     
     let scip_file = scip_mapper.run_scip_typescript(&repo_path.to_string_lossy())?;
     let scip_index = scip_mapper.parse_scip_index(&scip_file)?;
@@ -160,8 +157,7 @@ fn test_semantic_vs_syntactic_coexistence() -> Result<()> {
     }
     
     // Run semantic analysis
-    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16")
-        .with_scip_cli_path("/Users/pranavsharan/go/bin/scip".to_string());
+    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16");
     
     let scip_file = scip_mapper.run_scip_typescript(&repo_path.to_string_lossy())?;
     let scip_index = scip_mapper.parse_scip_index(&scip_file)?;

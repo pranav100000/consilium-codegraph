@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use store::GraphStore;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 use ts_harness::TypeScriptHarness;
 use py_harness::PythonHarness;
@@ -237,8 +237,25 @@ async fn main() -> Result<()> {
                         .unwrap_or(file_path)
                         .to_string_lossy()
                         .to_string();
-                    
-                    let content = std::fs::read_to_string(file_path)?;
+
+                    // Read file content with UTF-8 error handling
+                    let content = match std::fs::read_to_string(file_path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            // Check if it's a UTF-8 error (binary file with wrong extension)
+                            if e.to_string().contains("invalid utf-8") ||
+                               e.to_string().contains("stream did not contain valid UTF-8") {
+                                warn!(
+                                    "Skipping file with invalid UTF-8 (possibly binary): {} - {}",
+                                    relative_path, e
+                                );
+                            } else {
+                                warn!("Failed to read file {}: {}", relative_path, e);
+                            }
+                            continue;
+                        }
+                    };
+
                     let hash = FileWalker::compute_file_hash(&content);
                     let lines = content.lines().count();
                     total_lines += lines;

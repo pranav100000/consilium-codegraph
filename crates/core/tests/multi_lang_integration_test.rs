@@ -109,16 +109,20 @@ int main() {
         .args(&["run", "-p", "reviewbot", "--", "--repo", dir.path().to_str().unwrap(), "scan"])
         .output()?;
     
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Verify all languages were processed
-    assert!(stdout.contains("Indexed 7 files"), "Should index all 7 files");
     assert!(output.status.success(), "Scan should succeed");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let file_count = store.get_file_count()?;
+
+    assert_eq!(file_count, 7,
+        "Should index all 7 files (TypeScript, Python, Go, Rust, Java, C++, C)");
+
     // Check database was created
     let db_path = dir.path().join(".reviewbot/graph.db");
     assert!(db_path.exists(), "Database should exist");
-    
+
     Ok(())
 }
 
@@ -173,12 +177,16 @@ void process();
         .args(&["run", "-p", "reviewbot", "--", "--repo", dir.path().to_str().unwrap(), "scan"])
         .output()?;
     
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Should detect edges (imports)
-    assert!(stdout.contains("edges"), "Should find import edges");
     assert!(output.status.success());
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let edge_count = store.get_edge_count()?;
+
+    assert!(edge_count > 0,
+        "Should find import edges (found {} edges)", edge_count);
+
     Ok(())
 }
 
@@ -228,10 +236,15 @@ def valid_function():
     
     // Should complete without crashing
     assert!(output.status.success(), "Should handle malformed files gracefully");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Indexed"), "Should still index files");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let file_count = store.get_file_count()?;
+
+    assert!(file_count > 0,
+        "Should still index files (found {} files)", file_count);
+
     Ok(())
 }
 
@@ -272,10 +285,15 @@ fn test_large_file_handling() -> Result<()> {
         .output()?;
     
     assert!(output.status.success(), "Should handle large files");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("1000 symbols") || stdout.contains("symbols"), 
-            "Should index many symbols");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let symbol_count = store.get_symbol_count()?;
+
+    // Generated 1000 classes, should have at least 1000 symbols
+    assert!(symbol_count >= 1000,
+        "Should index at least 1000 symbols (1000 classes), got {}", symbol_count);
+
     Ok(())
 }

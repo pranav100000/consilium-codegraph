@@ -95,12 +95,20 @@ fn test_rust_parsing() -> Result<()> {
         .output()?;
     
     assert!(output.status.success(), "Scan should succeed");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Indexed 2 files"), "Should index 2 Rust files");
-    assert!(stdout.contains("symbols"), "Should find symbols");
-    assert!(stdout.contains("edges"), "Should find edges");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(test_dir.path())?;
+
+    let file_count = store.get_file_count()?;
+    assert_eq!(file_count, 2, "Should index 2 Rust files");
+
+    let symbol_count = store.get_symbol_count()?;
+    assert!(symbol_count > 0, "Should find symbols (found {})", symbol_count);
+
+    let edge_count = store.get_edge_count()?;
+    assert!(edge_count > 0, "Should find edges (found {})", edge_count);
+
     // Verify database exists
     let db_path = test_dir.path().join(".reviewbot/graph.db");
     assert!(db_path.exists(), "Database should be created");
@@ -228,10 +236,14 @@ export function calculate(x: number, y: number): number {
         .output()?;
     
     assert!(output.status.success(), "Scan should succeed");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Indexed 4 files"), "Should index 4 files from different languages");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let file_count = store.get_file_count()?;
+
+    assert_eq!(file_count, 4, "Should index 4 files from different languages");
+
     // Search for calculate function across all languages
     let search_output = std::process::Command::new("cargo")
         .args(&["run", "-p", "reviewbot", "--", "--repo", dir.path().to_str().unwrap(), "search", "calculate"])

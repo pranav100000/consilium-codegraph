@@ -362,20 +362,32 @@ fn test_binary_files_mixed_with_source() -> Result<()> {
     
     let output = Command::new("cargo")
         .args(&[
-            "run", "-p", "reviewbot", "--", 
+            "run", "-p", "reviewbot", "--",
             "--repo", &project_path.to_string_lossy(),
-            "scan", 
+            "scan",
             "--no-write"
         ])
         .output()?;
-    
+
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
     // Should complete successfully, processing valid source files and skipping binary files
-    assert!(output.status.success(), 
+    assert!(output.status.success(),
         "System should handle binary files gracefully. stderr: {}", stderr);
-    
-    println!("✅ Binary files handled gracefully");
+
+    // VERIFICATION: Binary files with source extensions should be skipped with warnings
+    // Note: The actual binary files may be skipped during walk or fail UTF-8 validation
+    let has_utf8_warning = stderr.contains("invalid UTF-8") || stderr.contains("Skipping");
+    let processed_valid = stdout.contains("valid.ts") || stdout.contains("files");
+
+    // Either we logged warnings about binary files OR we successfully skipped them silently
+    // Both behaviors are acceptable as long as we don't crash
+    assert!(has_utf8_warning || processed_valid,
+        "Should either log warnings about binary files OR skip them gracefully. \
+         stderr: {}, stdout: {}", stderr, stdout);
+
+    println!("✅ Binary files handled gracefully: no crashes, valid files processed");
     Ok(())
 }
 
@@ -526,20 +538,30 @@ with no actual code
     
     let output = Command::new("cargo")
         .args(&[
-            "run", "-p", "reviewbot", "--", 
+            "run", "-p", "reviewbot", "--",
             "--repo", &project_path.to_string_lossy(),
-            "scan", 
+            "scan",
             "--no-write"
         ])
         .output()?;
-    
+
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
     // Should complete successfully, handling empty files gracefully
-    assert!(output.status.success(), 
+    assert!(output.status.success(),
         "System should handle empty files gracefully. stderr: {}", stderr);
-    
-    println!("✅ Empty and whitespace-only files handled gracefully");
+
+    // VERIFICATION: Empty files should be processed without errors
+    // They just won't produce any symbols
+    assert!(!stderr.contains("error") && !stderr.contains("Error"),
+        "Should not have errors processing empty files. stderr: {}", stderr);
+
+    // VERIFICATION: Should process valid.ts and produce symbols
+    assert!(stdout.contains("valid.ts") || stdout.contains("files"),
+        "Should process files. stdout: {}", stdout);
+
+    println!("✅ Empty and whitespace-only files handled gracefully: no errors, valid files processed");
     Ok(())
 }
 

@@ -21,12 +21,42 @@ impl GraphStore {
         std::fs::create_dir_all(&db_dir)?;
         let db_path = db_dir.join("graph.db");
 
+        let db_exists = db_path.exists();
+
         // Get shared connection instead of creating a new one
         let conn = get_shared_connection(&db_path)?;
 
         let store = Self { db_path, conn };
+
+        // If database already exists, verify integrity before using
+        if db_exists {
+            store.verify_database_integrity()?;
+        }
+
         store.init_schema()?;
         Ok(store)
+    }
+
+    /// Verify database integrity to detect corruption
+    fn verify_database_integrity(&self) -> Result<()> {
+        execute_with_retry(&self.conn, |connection| {
+            // Run SQLite integrity check
+            let result: String = connection.query_row(
+                "PRAGMA integrity_check",
+                [],
+                |row| row.get(0)
+            )?;
+
+            if result != "ok" {
+                return Err(anyhow::anyhow!(
+                    "Database integrity check failed: {}. The database may be corrupted. \
+                     Consider deleting .reviewbot/graph.db and re-running the scan.",
+                    result
+                ));
+            }
+
+            Ok(())
+        }, 3)
     }
     
     fn init_schema(&self) -> Result<()> {
@@ -829,11 +859,35 @@ impl GraphStore {
         }, 3)
     }
 
+    /// Get symbol count for a specific commit
+    pub fn get_symbol_count_for_commit(&self, commit_id: i64) -> Result<usize> {
+        execute_with_retry(&self.conn, |connection| {
+            let count = connection.query_row(
+                "SELECT COUNT(*) FROM symbol WHERE commit_id = ?1",
+                params![commit_id],
+                |row| row.get::<_, i64>(0),
+            )?;
+            Ok(count as usize)
+        }, 3)
+    }
+
     pub fn get_edge_count(&self) -> Result<usize> {
         execute_with_retry(&self.conn, |connection| {
             let count = connection.query_row(
                 "SELECT COUNT(*) FROM edge",
                 [],
+                |row| row.get::<_, i64>(0),
+            )?;
+            Ok(count as usize)
+        }, 3)
+    }
+
+    /// Get edge count for a specific commit
+    pub fn get_edge_count_for_commit(&self, commit_id: i64) -> Result<usize> {
+        execute_with_retry(&self.conn, |connection| {
+            let count = connection.query_row(
+                "SELECT COUNT(*) FROM edge WHERE commit_id = ?1",
+                params![commit_id],
                 |row| row.get::<_, i64>(0),
             )?;
             Ok(count as usize)

@@ -104,14 +104,41 @@ fn test_multiple_graphstore_instances_fail() -> Result<()> {
         }
     }
 
-    // This test demonstrates the problem - we expect some failures initially
-    // After fixing, final_errors.len() should be 0
-    if final_errors.len() > 0 {
-        println!("⚠️  EXPECTED FAILURE: Found {} lock contention errors (this proves the problem exists)", final_errors.len());
-        println!("   This test will pass after implementing connection manager fixes");
-    } else {
-        println!("✅ No concurrency errors - connection sharing is working!");
+    // CRITICAL ASSERTIONS: Test must fail if there are concurrency errors
+    assert_eq!(final_errors.len(), 0,
+        "Concurrency test failed: {} threads encountered errors. \
+         Connection sharing should eliminate all lock contention. \
+         Errors: {:?}",
+        final_errors.len(),
+        final_errors
+    );
+
+    assert_eq!(final_success, 5,
+        "Expected all 5 threads to succeed, but only {} succeeded",
+        final_success
+    );
+
+    // CRITICAL: Verify data integrity - all symbols should be inserted
+    let store = GraphStore::new(&repo_path)?;
+    let total_symbols = store.get_symbol_count()?;
+
+    assert_eq!(total_symbols, 250,
+        "Expected 250 symbols (5 threads × 50 symbols), but found {}. \
+         This indicates data loss or duplicate overwrites.",
+        total_symbols
+    );
+
+    // Verify each thread's data is present
+    for thread_id in 0..5 {
+        let thread_symbols = store.search_symbols(&format!("func_{}", thread_id), 100)?;
+        assert_eq!(thread_symbols.len(), 50,
+            "Thread {} should have inserted 50 symbols, but found {}",
+            thread_id,
+            thread_symbols.len()
+        );
     }
+
+    println!("✅ All concurrency assertions passed: 0 errors, 250 symbols inserted correctly");
 
     Ok(())
 }
@@ -187,12 +214,26 @@ fn test_concurrent_operations_lock_errors() -> Result<()> {
         println!("  {}", error);
     }
 
-    if final_lock_errors.len() > 0 {
-        println!("⚠️  EXPECTED FAILURE: Detected {} lock errors", final_lock_errors.len());
-        println!("   These specific lock errors will be eliminated by connection sharing");
-    } else {
-        println!("✅ No lock errors detected - concurrent operations working smoothly!");
-    }
+    // CRITICAL ASSERTION: No lock errors should occur with connection sharing
+    assert_eq!(final_lock_errors.len(), 0,
+        "Lock errors detected during concurrent operations: {} errors. \
+         Connection sharing should eliminate all lock contention. \
+         Errors: {:?}",
+        final_lock_errors.len(),
+        final_lock_errors
+    );
+
+    // Verify data integrity - all operations completed successfully
+    let store = GraphStore::new(&repo_path)?;
+    let symbol_count = store.get_symbol_count()?;
+
+    // 8 threads × 20 symbols = 160 expected
+    assert!(symbol_count >= 160,
+        "Expected at least 160 symbols from 8 threads, but found {}",
+        symbol_count
+    );
+
+    println!("✅ Concurrent operations test passed: 0 lock errors, {} symbols inserted", symbol_count);
 
     Ok(())
 }
@@ -275,15 +316,25 @@ fn test_real_world_scan_scenario() -> Result<()> {
 
     let final_errors = errors.lock().unwrap();
 
-    if final_errors.len() > 0 {
-        println!("⚠️  REAL-WORLD SCENARIO FAILURES: {} errors", final_errors.len());
-        for error in final_errors.iter() {
-            println!("  {}", error);
-        }
-        println!("   This proves the issue will occur in actual CLI usage");
-    } else {
-        println!("✅ Real-world scenario completed without errors!");
-    }
+    // CRITICAL ASSERTION: Real-world usage should not produce errors
+    assert_eq!(final_errors.len(), 0,
+        "Real-world scenario test failed: {} errors occurred during simulated CLI usage. \
+         Errors: {:?}",
+        final_errors.len(),
+        final_errors
+    );
+
+    // Verify all operations completed successfully
+    let store = GraphStore::new(&repo_path)?;
+    let symbol_count = store.get_symbol_count()?;
+
+    // Scenario 0: 100 symbols, Scenario 1: 50 symbols
+    assert!(symbol_count >= 150,
+        "Expected at least 150 symbols from real-world scenario, but found {}",
+        symbol_count
+    );
+
+    println!("✅ Real-world scenario test passed: {} symbols indexed without errors", symbol_count);
 
     Ok(())
 }
@@ -356,22 +407,34 @@ fn test_high_contention_stress() -> Result<()> {
     println!("  Operations completed: {}/15", final_operations);
     println!("  Errors: {}", final_errors.len());
 
-    if final_errors.len() > 0 {
-        println!("  Error breakdown:");
-        let mut lock_errors = 0;
-        for error in final_errors.iter() {
-            if error.contains("database is locked") || error.contains("SQLITE_BUSY") {
-                lock_errors += 1;
-            }
-            println!("    {}", error);
-        }
-        println!("  Lock-related errors: {}/{}", lock_errors, final_errors.len());
+    // CRITICAL ASSERTION: High contention should not cause failures
+    assert_eq!(final_errors.len(), 0,
+        "High contention stress test failed: {} threads encountered errors ({:.1}% failure rate). \
+         Connection sharing should handle high contention. \
+         Errors: {:?}",
+        final_errors.len(),
+        (final_errors.len() as f32 / 15.0) * 100.0,
+        final_errors
+    );
 
-        println!("⚠️  HIGH CONTENTION FAILURES: {:.1}% failure rate",
-                (final_errors.len() as f32 / 15.0) * 100.0);
-    } else {
-        println!("✅ High contention handled successfully!");
-    }
+    assert_eq!(final_operations, 15,
+        "Expected all 15 threads to complete, but only {} completed",
+        final_operations
+    );
+
+    // Verify data integrity under high contention
+    let store = GraphStore::new(&repo_path)?;
+    let symbol_count = store.get_symbol_count()?;
+
+    // 15 threads × 5 batches × 10 symbols = 750 expected
+    assert_eq!(symbol_count, 750,
+        "Expected 750 symbols (15 threads × 5 batches × 10 symbols), but found {}. \
+         High contention caused data loss or corruption.",
+        symbol_count
+    );
+
+    println!("✅ High contention stress test passed: 15 threads, 750 symbols, 0 errors in {}ms",
+        duration.as_millis());
 
     Ok(())
 }

@@ -258,7 +258,6 @@ fn test_ir_mapping_occurrences() -> Result<()> {
 }
 
 #[test]
-#[ignore] // FIXME: Symbol kind detection incorrectly identifies CONSTANT as Class instead of Variable
 fn test_symbol_kind_detection() -> Result<()> {
     println!("🏷️ Testing symbol kind detection...");
     

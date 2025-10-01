@@ -9,7 +9,8 @@ mod tests {
     #[ignore] // Requires external test file - run with: cargo test -- --ignored
     fn test_full_scip_index_parsing() {
         // Test JSON parsing directly since we don't have scip CLI
-        let json_data = std::fs::read_to_string("/Users/pranavsharan/Developer/consilium-codegraph/test_scip_index.json")
+        // Use relative path from project root (where tests are run)
+        let json_data = std::fs::read_to_string("test_scip_index.json")
             .expect("Could not read test SCIP index");
 
         let result: Result<crate::ScipIndex, _> = serde_json::from_str(&json_data);

@@ -89,17 +89,28 @@ private:
     let elapsed = start.elapsed();
     
     assert!(output.status.success(), "Scan should succeed");
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     // Performance assertions
     println!("Scan took {:?} for large files", elapsed);
     assert!(elapsed.as_secs() < 30, "Should scan large files in under 30 seconds");
-    
-    // Verify all symbols were found
-    assert!(stdout.contains("7000 symbols") || stdout.contains("symbols"), 
-            "Should find many symbols");
-    
+
+    // CRITICAL: Verify actual symbol count in database, not just stdout
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let symbol_count = store.get_symbol_count()?;
+
+    // Expected: ~5000 TS functions + ~2000 Java symbols (class+method+field per class) + ~2000 C++ symbols
+    // Actual varies by parser, so allow range
+    assert!(symbol_count >= 6000,
+        "Expected at least 6000 symbols (5000 TS + 1000 Java + 1000 C++), but found {}. \
+         This indicates the parser failed to extract symbols correctly.",
+        symbol_count
+    );
+
+    println!("✅ Performance test verified: {} symbols indexed in {:?}", symbol_count, elapsed);
+
     Ok(())
 }
 
@@ -239,11 +250,15 @@ fn test_concurrent_file_processing() -> Result<()> {
     
     println!("Processing 200 files took {:?}", elapsed);
     assert!(elapsed.as_secs() < 10, "Should process 200 small files quickly");
-    
-    // Should process all files
-    assert!(stdout.contains("200 files") || stdout.contains("Indexed 200"),
-            "Should process all 200 files");
-    
+
+    // Verify actual database contents
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let file_count = store.get_file_count()?;
+
+    assert_eq!(file_count, 200,
+        "Should process all 200 files");
+
     Ok(())
 }
 

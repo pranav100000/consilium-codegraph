@@ -8,6 +8,17 @@ use tracing::info;
 #[cfg(test)]
 mod test_parse;
 
+/// Helper function to check if a name is all uppercase (SCREAMING_SNAKE_CASE constant)
+fn is_all_uppercase(name: &str) -> bool {
+    // A name is all uppercase if:
+    // 1. It has at least one alphabetic character
+    // 2. All alphabetic characters are uppercase
+    // 3. Can contain underscores and numbers (e.g., MAX_SIZE, API_V2)
+    let has_alpha = name.chars().any(|c| c.is_alphabetic());
+    let all_upper = name.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_uppercase());
+    has_alpha && all_upper
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScipIndex {
     pub metadata: ScipMetadata,
@@ -65,11 +76,47 @@ impl ScipMapper {
     pub fn new(indexer_name: &str, indexer_version: &str) -> Self {
         let mut provenance = HashMap::new();
         provenance.insert("source".to_string(), format!("{}@{}", indexer_name, indexer_version));
-        
-        Self { 
+
+        Self {
             provenance,
-            scip_cli_path: "/Users/pranavsharan/go/bin/scip".to_string(), // Use Go-installed SCIP
+            scip_cli_path: Self::detect_scip_cli_path(),
         }
+    }
+
+    /// Auto-detect SCIP CLI path from environment or common locations
+    fn detect_scip_cli_path() -> String {
+        // 1. Check environment variable first
+        if let Ok(path) = std::env::var("SCIP_CLI_PATH") {
+            return path;
+        }
+
+        // 2. Check if 'scip' is in PATH
+        if let Ok(output) = Command::new("which").arg("scip").output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return path;
+                }
+            }
+        }
+
+        // 3. Check common installation locations
+        let common_paths = [
+            "scip", // Try bare command (will use PATH)
+            "/usr/local/bin/scip",
+            "/usr/bin/scip",
+            &format!("{}/go/bin/scip", std::env::var("HOME").unwrap_or_default()),
+            &format!("{}/.local/bin/scip", std::env::var("HOME").unwrap_or_default()),
+        ];
+
+        for path in &common_paths {
+            if std::path::Path::new(path).exists() || path == &"scip" {
+                return path.to_string();
+            }
+        }
+
+        // 4. Default fallback to bare command name (will fail if not in PATH)
+        "scip".to_string()
     }
     
     pub fn with_scip_cli_path(mut self, path: String) -> Self {
@@ -262,10 +309,14 @@ impl ScipMapper {
         } else if symbol_path.contains("#") && !symbol_path.ends_with("#") {
             // Class members that are not methods are typically fields/properties
             SymbolKind::Field
+        } else if is_all_uppercase(&name) {
+            // SCREAMING_SNAKE_CASE constants (e.g., CONSTANT, MAX_SIZE)
+            SymbolKind::Variable
         } else if name.chars().next().unwrap_or('a').is_uppercase() {
-            // Uppercase names are likely classes/types
+            // PascalCase names are likely classes/types (e.g., MyClass, UserService)
             SymbolKind::Class
         } else {
+            // camelCase or snake_case variables
             SymbolKind::Variable
         };
         

@@ -253,23 +253,66 @@ fn test_fts5_full_text_search_advanced() -> Result<()> {
     
     // Test various FTS5 query patterns
     let authentication_results = store.search_symbols_fts("authentication", 10)?;
-    assert!(authentication_results.len() > 0);
-    
+    assert!(authentication_results.len() > 0, "Should find authentication results");
+
+    // CRITICAL: Verify we found the CORRECT symbol
+    let found_auth_service = authentication_results.iter()
+        .any(|s| s.name == "AuthenticationService");
+    assert!(found_auth_service,
+        "Search for 'authentication' should find AuthenticationService. Found instead: {:?}",
+        authentication_results.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+
     let database_results = store.search_symbols_fts("database", 10)?;
-    assert!(database_results.len() > 0);
-    
+    assert!(database_results.len() > 0, "Should find database results");
+
+    // CRITICAL: Verify correct symbol
+    let found_db_manager = database_results.iter()
+        .any(|s| s.name == "DatabaseManager");
+    assert!(found_db_manager,
+        "Search for 'database' should find DatabaseManager. Found instead: {:?}",
+        database_results.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+
     // Test phrase search
     let session_results = store.search_symbols_fts("\"session management\"", 10)?;
-    assert!(session_results.len() > 0);
-    
+    assert!(session_results.len() > 0, "Should find session management results");
+
+    // CRITICAL: Phrase search should find symbol with exact phrase in doc
+    let found_session = session_results.iter()
+        .any(|s| s.name == "AuthenticationService");
+    assert!(found_session,
+        "Phrase search for 'session management' should find AuthenticationService"
+    );
+
     // Test prefix search
     let api_results = store.search_symbols_fts("API*", 10)?;
-    assert!(api_results.len() > 0);
-    
+    assert!(api_results.len() > 0, "Should find API results");
+
+    // CRITICAL: Verify API prefix search finds APIController
+    let found_api = api_results.iter()
+        .any(|s| s.name == "APIController");
+    assert!(found_api,
+        "Prefix search 'API*' should find APIController. Found instead: {:?}",
+        api_results.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+
     // Test complex query (AND/OR operations)
     let complex_results = store.search_symbols_fts("user OR database", 10)?;
-    assert!(complex_results.len() >= 2);
-    
+    assert!(complex_results.len() >= 2, "OR query should find multiple results");
+
+    // CRITICAL: Should find both ValidationHelper (user input) and DatabaseManager (database)
+    let result_names: Vec<&str> = complex_results.iter().map(|s| s.name.as_str()).collect();
+    let has_validation = result_names.contains(&"ValidationHelper");
+    let has_database = result_names.contains(&"DatabaseManager");
+
+    assert!(has_validation || has_database,
+        "OR query 'user OR database' should find ValidationHelper or DatabaseManager. Found: {:?}",
+        result_names
+    );
+
+    println!("✅ FTS5 search test verified: all queries returned correct symbols");
+
     Ok(())
 }
 

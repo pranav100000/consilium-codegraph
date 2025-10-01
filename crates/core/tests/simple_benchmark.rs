@@ -99,8 +99,7 @@ fn bench_typescript_scip_simple() -> Result<()> {
     create_simple_typescript_project(project_path)?;
     let setup_time = setup_start.elapsed();
     
-    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16")
-        .with_scip_cli_path("/Users/pranavsharan/go/bin/scip".to_string());
+    let scip_mapper = ScipMapper::new("scip-typescript", "0.3.16");
     
     // Test SCIP indexing
     let indexing_start = Instant::now();

@@ -18,11 +18,15 @@ fn test_empty_repository() -> Result<()> {
         .output()?;
     
     assert!(output.status.success(), "Should handle empty repository");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("0 files") || stdout.contains("No files"),
-            "Should report no files in empty repo");
-    
+
+    // Verify actual database contents
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let file_count = store.get_file_count()?;
+
+    assert_eq!(file_count, 0,
+        "Should have 0 files in empty repository");
+
     Ok(())
 }
 
@@ -57,11 +61,19 @@ fn test_files_with_no_symbols() -> Result<()> {
         .output()?;
     
     assert!(output.status.success(), "Should handle files with no symbols");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("0 symbols") || !stdout.contains("symbols"),
-            "Should find no symbols in empty files");
-    
+
+    // CRITICAL: Verify database state, not just stdout
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let symbol_count = store.get_symbol_count()?;
+
+    assert_eq!(symbol_count, 0,
+        "Files with only comments should produce 0 symbols, but found {}",
+        symbol_count
+    );
+
+    println!("✅ Empty files test verified: 0 symbols as expected");
+
     Ok(())
 }
 
@@ -118,10 +130,15 @@ class КлассПример:
         .output()?;
     
     assert!(output.status.success(), "Should handle Unicode identifiers");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("symbols"), "Should parse Unicode identifiers");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let symbol_count = store.get_symbol_count()?;
+
+    assert!(symbol_count > 0,
+        "Should parse Unicode identifiers and create symbols (found {})", symbol_count);
+
     Ok(())
 }
 
@@ -236,11 +253,15 @@ fn test_mixed_line_endings() -> Result<()> {
         .output()?;
     
     assert!(output.status.success(), "Should handle mixed line endings");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("3 symbols") || stdout.contains("symbols"),
-            "Should find all functions despite mixed line endings");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let symbol_count = store.get_symbol_count()?;
+
+    assert_eq!(symbol_count, 3,
+        "Should find exactly 3 function symbols despite mixed line endings");
+
     Ok(())
 }
 
@@ -281,10 +302,15 @@ export function b(): void { a(); }
         .output()?;
     
     assert!(output.status.success(), "Should handle circular dependencies");
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("edges"), "Should detect circular import edges");
-    
+
+    // Verify actual database contents instead of stdout parsing
+    use store::GraphStore;
+    let store = GraphStore::new(dir.path())?;
+    let edge_count = store.get_edge_count()?;
+
+    assert!(edge_count > 0,
+        "Should detect circular import edges (found {} edges)", edge_count);
+
     Ok(())
 }
 
