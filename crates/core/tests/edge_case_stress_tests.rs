@@ -375,9 +375,12 @@ fn test_file_disappears_during_scan() -> Result<()> {
     // This is hard to test deterministically, but documents the edge case
     // In practice, walk() collects all paths, then main.rs iterates them
     // If a file is deleted between these steps, read_to_string will fail
-    // Current code doesn't handle this - it would crash
 
-    // TODO: Add error handling for files that disappear during scan
+    // ✅ FIXED: Error handling added in main.rs:248
+    // - Catches ErrorKind::NotFound for disappeared files
+    // - Logs warning: "File disappeared during scan: {path} (race condition)"
+    // - Continues processing other files without crashing
+    // - Scan completes successfully despite race condition
     Ok(())
 }
 

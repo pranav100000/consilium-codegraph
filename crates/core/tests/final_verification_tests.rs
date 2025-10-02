@@ -198,9 +198,15 @@ fn verify_hash_stability() -> Result<()> {
     Ok(())
 }
 
-/// VERIFY: Memory usage with huge batch
+/// VERIFY: Memory usage with huge batch (50k symbols)
+///
+/// IGNORED REASON: Memory-intensive test, allocates 50k symbols in RAM
+/// - Tests memory usage for batch insertion of 50,000 symbols
+/// - Validates no memory leaks or excessive allocations
+/// - Typical production usage: 1k-10k symbols per batch
+/// - Run explicitly with: cargo test verify_memory_usage_huge_batch -- --ignored
 #[test]
-#[ignore] // Memory intensive
+#[ignore] // Memory intensive - run explicitly with --ignored flag
 fn verify_memory_usage_huge_batch() -> Result<()> {
     use store::GraphStore;
     use protocol::{EdgeIR, EdgeType, Language, Span, SymbolIR, SymbolKind, Version, Resolution};

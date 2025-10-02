@@ -238,21 +238,30 @@ async fn main() -> Result<()> {
                         .to_string_lossy()
                         .to_string();
 
-                    // Read file content with UTF-8 error handling
+                    // Read file content with comprehensive error handling
                     let content = match std::fs::read_to_string(file_path) {
                         Ok(c) => c,
                         Err(e) => {
-                            // Check if it's a UTF-8 error (binary file with wrong extension)
-                            if e.to_string().contains("invalid utf-8") ||
-                               e.to_string().contains("stream did not contain valid UTF-8") {
-                                warn!(
-                                    "Skipping file with invalid UTF-8 (possibly binary): {} - {}",
-                                    relative_path, e
-                                );
-                            } else {
-                                warn!("Failed to read file {}: {}", relative_path, e);
+                            // Handle different failure modes gracefully
+                            use std::io::ErrorKind;
+                            match e.kind() {
+                                ErrorKind::NotFound => {
+                                    // File disappeared between walk() and read (race condition)
+                                    warn!("File disappeared during scan: {} (race condition)", relative_path);
+                                }
+                                ErrorKind::PermissionDenied => {
+                                    warn!("Permission denied reading file: {}", relative_path);
+                                }
+                                _ if e.to_string().contains("invalid utf-8") ||
+                                     e.to_string().contains("stream did not contain valid UTF-8") => {
+                                    // Binary file with source code extension
+                                    warn!("Skipping file with invalid UTF-8 (possibly binary): {}", relative_path);
+                                }
+                                _ => {
+                                    warn!("Failed to read file {}: {}", relative_path, e);
+                                }
                             }
-                            continue;
+                            continue; // Skip this file and continue processing others
                         }
                     };
 

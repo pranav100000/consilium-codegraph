@@ -7,8 +7,13 @@ use tempfile::TempDir;
 use std::os::unix::fs::PermissionsExt;
 
 /// Test: Very large number of files (10,000+)
+///
+/// IGNORED REASON: Performance test that takes 60+ seconds
+/// - Creates 10,000 source files to test walker and batch insertion performance
+/// - Validates system handles large codebases (e.g., Linux kernel, Chromium)
+/// - Run explicitly with: cargo test test_massive_file_count -- --ignored
 #[test]
-#[ignore] // Slow test - run explicitly
+#[ignore] // Slow test - run explicitly with --ignored flag
 fn test_massive_file_count() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
@@ -46,8 +51,13 @@ fn test_massive_file_count() -> Result<()> {
 }
 
 /// Test: File with 1 million lines
+///
+/// IGNORED REASON: Creates ~100MB file in memory, takes 30+ seconds
+/// - Tests Tree-sitter parser on extremely large single file
+/// - Validates no stack overflow or OOM on massive files
+/// - Run explicitly with: cargo test test_million_line_file -- --ignored
 #[test]
-#[ignore] // Creates large file
+#[ignore] // Memory/CPU intensive - run explicitly with --ignored flag
 fn test_million_line_file() -> Result<()> {
     let temp_dir = TempDir::new()?;
 
@@ -250,16 +260,26 @@ fn test_corrupt_database_recovery() -> Result<()> {
     assert!(output.status.success(),
         "Should auto-recover from completely corrupt database by creating fresh one");
 
-    // Verify it ran successfully (either re-scanned or detected unchanged)
-    assert!(stdout.contains("Indexed") || stdout.contains("files") || stdout.contains("unchanged"),
-        "Should complete successfully after recovery. stdout: {}", stdout);
+    // Verify actual database state - should have re-scanned and created valid database
+    use store::GraphStore;
+    let store = GraphStore::new(temp_dir.path())?;
+    let file_count = store.get_file_count()?;
+
+    assert_eq!(file_count, 1,
+        "Should have 1 file after recovery (re-created database from scratch)");
 
     Ok(())
 }
 
-/// Test: Disk full scenario (hard to simulate)
+/// Test: Disk full scenario during batch insert
+///
+/// IGNORED REASON: Requires special infrastructure setup
+/// - Would need: loop device (Linux), disk quota, or small partition
+/// - Tests transaction rollback when SQLite runs out of disk space
+/// - Expected behavior: Transaction rolls back, no partial data
+/// - TODO: Implement with platform-specific disk quota simulation
 #[test]
-#[ignore] // Requires special setup
+#[ignore] // Requires infrastructure setup (disk quota/loop device)
 fn test_disk_full_handling() -> Result<()> {
     // This would require creating a small virtual filesystem
     // or using platform-specific quota tools
@@ -267,9 +287,14 @@ fn test_disk_full_handling() -> Result<()> {
     Ok(())
 }
 
-/// Test: Network filesystem latency (if repo on NFS)
+/// Test: Network filesystem latency (NFS, SMB, remote mounts)
+///
+/// IGNORED REASON: Requires network filesystem mount
+/// - Would test behavior on NFS/SMB mounts with high latency
+/// - Validates no timeouts or performance degradation
+/// - Run manually by placing test repo on network mount
 #[test]
-#[ignore] // Requires network filesystem
+#[ignore] // Requires network filesystem mount (NFS/SMB)
 fn test_network_filesystem_handling() -> Result<()> {
     // Test on NFS mount would reveal performance issues
     // and potential timeout problems

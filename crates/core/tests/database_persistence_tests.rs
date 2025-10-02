@@ -320,14 +320,11 @@ fn test_fts5_full_text_search_advanced() -> Result<()> {
 fn test_incremental_data_updates() -> Result<()> {
     let (store, _temp_dir) = create_test_store()?;
     
-    // Simulate incremental updates across multiple commits with small delays to ensure different timestamps
-    let commit1 = store.get_or_create_commit("commit_1")?;
-    std::thread::sleep(std::time::Duration::from_millis(1));
-
-    let commit2 = store.get_or_create_commit("commit_2")?;
-    std::thread::sleep(std::time::Duration::from_millis(1));
-
-    let commit3 = store.get_or_create_commit("commit_3")?;
+    // Create commits with unique SHA identifiers - timestamp ordering not required
+    // The commit SHA itself provides uniqueness and ordering
+    let commit1 = store.get_or_create_commit("commit_1_sha_abc123")?;
+    let commit2 = store.get_or_create_commit("commit_2_sha_def456")?;
+    let commit3 = store.get_or_create_commit("commit_3_sha_ghi789")?;
     
     // Commit 1: Initial state
     let symbol1 = create_complex_symbol("s1", "initialFunc", Language::TypeScript, SymbolKind::Function);
@@ -348,17 +345,17 @@ fn test_incremental_data_updates() -> Result<()> {
     store.insert_file(commit3, "main.ts", "hash4", 1200)?;
     
     // Test file evolution
-    let files_c1 = store.get_files_in_commit("commit_1")?;
-    let files_c2 = store.get_files_in_commit("commit_2")?;
-    let files_c3 = store.get_files_in_commit("commit_3")?;
-    
+    let files_c1 = store.get_files_in_commit("commit_1_sha_abc123")?;
+    let files_c2 = store.get_files_in_commit("commit_2_sha_def456")?;
+    let files_c3 = store.get_files_in_commit("commit_3_sha_ghi789")?;
+
     assert_eq!(files_c1.len(), 1);
     assert_eq!(files_c2.len(), 2);
     assert_eq!(files_c3.len(), 1);
-    
+
     // Test latest commit detection
     let latest = store.get_latest_commit()?;
-    assert_eq!(latest, Some("commit_3".to_string()));
+    assert_eq!(latest, Some("commit_3_sha_ghi789".to_string()));
     
     Ok(())
 }

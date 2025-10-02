@@ -248,12 +248,13 @@ fn test_file_changes_during_processing() -> Result<()> {
     // Start a scanning process in the background
     let project_path_clone = project_path.to_path_buf();
     let scan_handle = thread::spawn(move || {
-        // Simulate a slow scan by adding delays
+        // Simulate rapid file changes without artificial delays
+        // This tests real-world scenario where files change during scan
         for i in 0..50 {
             fs::write(project_path_clone.join("changing.ts"),
                 format!("export const iteration{} = 'value{}';\nexport function func{}() {{ return {}; }}", i, i, i, i))
                 .unwrap();
-            thread::sleep(Duration::from_millis(50));
+            // No sleep - test actual concurrent modification handling
         }
     });
 

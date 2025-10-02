@@ -1857,10 +1857,13 @@ fn test_cross_language_performance_implications() -> Result<()> {
     let stats = graph.stats();
     
     // Verify we have our performance test edges
-    assert!(stats.edge_count >= perf_critical_edges.len());
-    
-    // We can't get all edges easily, so just verify the graph was built
-    assert!(stats.node_count >= 0);
-    
+    assert!(stats.edge_count >= perf_critical_edges.len(),
+        "Should have at least {} edges (found {})", perf_critical_edges.len(), stats.edge_count);
+
+    // Verify the graph has nodes (at least the symbols involved in edges)
+    // Each edge connects 2 nodes, so minimum nodes = edges (if all edges share endpoints)
+    assert!(stats.node_count > 0,
+        "Graph should have nodes for the symbols (found {})", stats.node_count);
+
     Ok(())
 }
