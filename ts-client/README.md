@@ -10,6 +10,7 @@ TypeScript client for querying code graphs with semantic enrichment. This packag
 - 🔄 **Cycle Detection**: Find circular dependencies automatically
 - 💾 **SQLite Backend**: Direct database access for maximum performance
 - 🎯 **Type Safety**: Full TypeScript definitions for all APIs
+- 🤖 **Agent-Focused API**: Designed to complement Read/Grep/Glob tools for AI coding agents
 
 ## Installation
 
@@ -38,6 +39,35 @@ cargo run -- --repo /path/to/your/repo scan --semantic
 This will create a `.reviewbot/graph.db` file in your repository.
 
 ## Quick Start
+
+### Agent API (For AI Coding Agents) 🤖
+
+**New!** If you're building AI coding agents, use the `AgentCodeGraph` API designed to complement Read/Grep/Glob tools:
+
+```typescript
+import { AgentCodeGraph } from "@consilium/codegraph-client";
+
+const agent = new AgentCodeGraph("/path/to/your/repo");
+
+// Find symbols (better than grep for structure)
+const symbols = agent.findSymbols("auth", { kind: ["Function", "Method"] });
+
+// Get symbol with relationships
+const info = agent.getSymbol("authenticateUser", {
+  includeCallers: true,
+  includeCallees: true
+});
+
+console.log(`Calls: ${info.callees?.length || 0} functions`);
+console.log(`Called by: ${info.callers?.length || 0} functions`);
+
+// Navigate the graph (deep traversal)
+const deps = agent.queryRelationships("processPayment", "calls", { depth: 3 });
+
+agent.close();
+```
+
+📚 **See [AGENT_API.md](./AGENT_API.md) for complete documentation**
 
 ### Simple API (Recommended for most use cases)
 

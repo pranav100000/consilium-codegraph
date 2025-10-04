@@ -9,6 +9,15 @@
 export { CodeGraph } from "./code-graph";
 export { CodeGraphAPI, analyzeCodebase, findRelatedCode } from "./code-graph-api";
 
+// Agent-focused API (designed to complement Read/Grep/Glob tools)
+export {
+  AgentCodeGraph,
+  SymbolInfo,
+  SymbolSearchResult,
+  RelationshipNode,
+  RelationshipType,
+} from "./agent-api";
+
 // Models and types
 export {
   Symbol,
