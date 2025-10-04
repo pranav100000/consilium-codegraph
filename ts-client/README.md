@@ -4,6 +4,7 @@ TypeScript client for querying code graphs with semantic enrichment. This packag
 
 ## Features
 
+- 📦 **Index from TypeScript**: Scan repositories without manual CLI commands
 - 🔍 **Symbol Queries**: Find and inspect functions, classes, methods, and more
 - 🕸️ **Graph Traversal**: Navigate call graphs, dependencies, and relationships
 - 📊 **Statistics**: Get insights into codebase structure and complexity
@@ -26,34 +27,42 @@ pnpm add @consilium/codegraph-client
 
 ## Prerequisites
 
-Before using the TypeScript client, you need to build a code graph using the Consilium CLI:
+You need to build the Rust CLI (one-time setup):
 
 ```bash
-# Install the Rust CLI (from the root of the consilium-codegraph repo)
+# From the consilium-codegraph repo
+cd /path/to/consilium-codegraph
 cargo build --release
-
-# Scan your repository
-cargo run -- --repo /path/to/your/repo scan --semantic
 ```
 
-This will create a `.reviewbot/graph.db` file in your repository.
+That's it! The TypeScript client can now index repositories automatically.
 
 ## Quick Start
 
 ### Agent API (For AI Coding Agents) 🤖
 
-**New!** If you're building AI coding agents, use the `AgentCodeGraph` API designed to complement Read/Grep/Glob tools:
+**Recommended for AI agents** - Complete TypeScript API for both indexing and querying:
 
 ```typescript
-import { AgentCodeGraph } from "@consilium/codegraph-client";
+import { scanRepositorySync, isScanned, AgentCodeGraph } from "@consilium/codegraph-client";
 
+// 1. Index the repository (if not already done)
+if (!isScanned("/path/to/your/repo")) {
+  const result = scanRepositorySync("/path/to/your/repo", {
+    semantic: true  // Include type information
+  });
+
+  console.log(`Indexed in ${result.duration}ms`);
+}
+
+// 2. Query the code graph
 const agent = new AgentCodeGraph("/path/to/your/repo");
 
 // Find symbols (better than grep for structure)
 const symbols = agent.findSymbols("auth", { kind: ["Function", "Method"] });
 
 // Get symbol with relationships
-const info = agent.getSymbol("authenticateUser", {
+const info = agent.getSymbol(symbols[0].fqn, {
   includeCallers: true,
   includeCallees: true
 });
@@ -62,10 +71,16 @@ console.log(`Calls: ${info.callees?.length || 0} functions`);
 console.log(`Called by: ${info.callers?.length || 0} functions`);
 
 // Navigate the graph (deep traversal)
-const deps = agent.queryRelationships("processPayment", "calls", { depth: 3 });
+const deps = agent.queryRelationships(symbols[0].fqn, "calls", { depth: 3 });
 
 agent.close();
 ```
+
+**Key Features:**
+- 📦 **Index from TypeScript**: `scanRepositorySync()` - no CLI needed
+- 🔍 **Find symbols**: `findSymbols()` - structured search (better than grep)
+- 🔗 **Get relationships**: `getSymbol()` - understand dependencies
+- 🕸️ **Navigate graph**: `queryRelationships()` - deep traversal
 
 📚 **See [AGENT_API.md](./AGENT_API.md) for complete documentation**
 
@@ -202,6 +217,42 @@ constructor(repoPath: string, dbPath?: string, semantic?: boolean)
 - `getStats(): GraphStats` - Get overall graph statistics
 - `findCycles(): string[][]` - Find all cycles in the call graph
 - `close(): void` - Close the database connection
+
+### Scanner API
+
+Index repositories from TypeScript.
+
+#### Functions
+
+```typescript
+// Synchronous scan
+scanRepositorySync(repoPath: string, options?: ScanOptions): ScanResult
+
+// Async scan
+scanRepository(repoPath: string, options?: ScanOptions): Promise<ScanResult>
+
+// Check if scanned
+isScanned(repoPath: string): boolean
+
+// Get CLI info
+getCLIInfo(): { path: string; version?: string } | null
+```
+
+**Options:**
+- `semantic?: boolean` - Include type information (default: false)
+- `quiet?: boolean` - Suppress output (default: false)
+
+**Example:**
+```typescript
+import { scanRepositorySync, isScanned } from "@consilium/codegraph-client";
+
+if (!isScanned("./my-project")) {
+  const result = scanRepositorySync("./my-project", { semantic: true });
+  if (result.success) {
+    console.log(`Scanned in ${result.duration}ms`);
+  }
+}
+```
 
 ### CodeGraph
 

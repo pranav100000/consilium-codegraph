@@ -18,6 +18,16 @@ export {
   RelationshipType,
 } from "./agent-api";
 
+// Scanner functions (for indexing repositories)
+export {
+  scanRepository,
+  scanRepositorySync,
+  isScanned,
+  getCLIInfo,
+  ScanOptions,
+  ScanResult,
+} from "./scanner";
+
 // Models and types
 export {
   Symbol,

@@ -1,6 +1,6 @@
 # Consilium CodeGraph 🚀
 
-A production-ready code analysis system that combines syntactic parsing with semantic analysis to build comprehensive code graphs. Features both a powerful Rust CLI and a Python API for maximum flexibility.
+A production-ready code analysis system that combines syntactic parsing with semantic analysis to build comprehensive code graphs. Features a powerful Rust CLI and TypeScript API for maximum flexibility.
 
 ## Features
 
@@ -20,11 +20,14 @@ A production-ready code analysis system that combines syntactic parsing with sem
 
 ### 🚀 **Advanced Features**
 - **Language Version Detection**: Automatic detection with confidence scoring
-- **Cross-file Symbol Resolution**: Import tracking and dependency analysis  
+- **Cross-file Symbol Resolution**: Import tracking and dependency analysis
 - **Incremental Processing**: Only re-analyze changed files
 - **Graph Operations**: Find cycles, paths, callers, callees with petgraph
 - **Full-text Search**: FTS5-powered symbol and occurrence search
-- **Python API**: Complete programmatic access for automation and tools
+- **TypeScript API**: Complete programmatic access for AI agents and automation
+  - Index repositories from TypeScript
+  - Query code graphs with 3 simple methods
+  - Designed to complement Read/Grep/Glob tools
 
 ## Installation
 
@@ -92,32 +95,43 @@ cargo run -- graph cycles "EventHandler.process"
 cargo run -- graph stats
 ```
 
-### Python API
+### TypeScript API (Recommended for AI Agents)
 
-The Python API provides programmatic access to all functionality:
+Complete TypeScript API for both indexing and querying:
 
-```python
-from agent_api.code_graph import CodeGraph
-from agent_api.simple_api import CodeGraphAPI
-from agent_api.helpers import AgentHelpers
+```typescript
+import { scanRepositorySync, isScanned, AgentCodeGraph } from "@consilium/codegraph-client";
 
-# Initialize with full semantic analysis
-graph = CodeGraph("./my-project", semantic=True)
-api = CodeGraphAPI("./my-project", semantic=True) 
-helpers = AgentHelpers("./my-project", semantic=True)
+// 1. Index the repository (if not already done)
+if (!isScanned("./my-project")) {
+  const result = scanRepositorySync("./my-project", {
+    semantic: true  // Include type information
+  });
+  console.log(`Indexed in ${result.duration}ms`);
+}
 
-# Or use syntactic analysis only
-graph = CodeGraph("./my-project", semantic=False)
+// 2. Query the code graph
+const agent = new AgentCodeGraph("./my-project");
 
-# Query symbols and relationships
-symbol = api.get_symbol("UserService.authenticate")
-file_symbols = api.get_file_symbols("src/auth.ts")
+// Find symbols (better than grep)
+const symbols = agent.findSymbols("auth", { kind: ["Function", "Method"] });
 
-# High-level analysis
-explanation = helpers.explain_function("calculateTotal")
-security_ctx = helpers.get_security_context("handleLogin")
-similar_code = helpers.find_similar_code("validation_function")
+// Get symbol with relationships
+const info = agent.getSymbol(symbols[0].fqn, {
+  includeCallers: true,
+  includeCallees: true
+});
+
+console.log(`Calls: ${info.callees?.length || 0} functions`);
+console.log(`Called by: ${info.callers?.length || 0} functions`);
+
+// Navigate the graph (deep traversal)
+const deps = agent.queryRelationships(symbols[0].fqn, "calls", { depth: 3 });
+
+agent.close();
 ```
+
+**See [ts-client/README.md](ts-client/README.md) and [COMPLETE_EXAMPLE.md](COMPLETE_EXAMPLE.md) for full documentation.**
 
 ## Architecture
 
