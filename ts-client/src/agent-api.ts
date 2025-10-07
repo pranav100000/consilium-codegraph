@@ -5,9 +5,9 @@
  * by adding the graph/relationship layer.
  */
 
-import Database from "better-sqlite3";
 import { join } from "path";
 import { existsSync } from "fs";
+import { createDatabase, DatabaseAdapter } from "./db-adapter";
 
 // ========== Types ==========
 
@@ -70,7 +70,7 @@ export type RelationshipType =
 // ========== Agent API ==========
 
 export class AgentCodeGraph {
-  private db: Database.Database;
+  private db: DatabaseAdapter;
   private dbPath: string;
 
   /**
@@ -88,7 +88,7 @@ export class AgentCodeGraph {
       );
     }
 
-    this.db = new Database(this.dbPath);
+    this.db = createDatabase(this.dbPath);
     this.db.pragma("journal_mode = WAL");
   }
 

@@ -28,6 +28,14 @@ export {
   ScanResult,
 } from "./scanner";
 
+// Database adapter (works with both Node.js and Bun)
+export {
+  createDatabase,
+  getDatabaseRuntime,
+  DatabaseAdapter,
+  StatementAdapter,
+} from "./db-adapter";
+
 // Models and types
 export {
   Symbol,

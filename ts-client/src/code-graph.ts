@@ -2,10 +2,10 @@
  * Core CodeGraph class for querying the unified code graph
  */
 
-import Database from "better-sqlite3";
 import { join } from "path";
 import { existsSync } from "fs";
 import { execSync } from "child_process";
+import { createDatabase, DatabaseAdapter } from "./db-adapter";
 import {
   Symbol,
   SymbolKind,
@@ -19,7 +19,7 @@ import {
  * Integrates multiple analyzers and provides unified access.
  */
 export class CodeGraph {
-  private db!: Database.Database;
+  private db!: DatabaseAdapter;
   private dbPath: string;
   private repoPath: string;
   private semantic: boolean;
@@ -52,11 +52,11 @@ export class CodeGraph {
    */
   private initDatabase(): void {
     if (existsSync(this.dbPath)) {
-      this.db = new Database(this.dbPath);
+      this.db = createDatabase(this.dbPath);
       this.db.pragma("journal_mode = WAL");
     } else {
       this.runInitialScan();
-      this.db = new Database(this.dbPath);
+      this.db = createDatabase(this.dbPath);
       this.db.pragma("journal_mode = WAL");
     }
   }
@@ -385,7 +385,7 @@ export class CodeGraph {
     const traverse = (current: string, path: string[], depth: number) => {
       if (depth >= maxDepth) return;
 
-      let stmt: Database.Statement;
+      let stmt;
       if (direction === "callers") {
         stmt = this.db.prepare(`
           SELECT DISTINCT src_symbol FROM edge

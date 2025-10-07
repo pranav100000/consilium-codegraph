@@ -2,9 +2,9 @@
  * Simplified Code Graph API for agents - focused on database queries
  */
 
-import Database from "better-sqlite3";
 import { join } from "path";
 import { existsSync } from "fs";
+import { createDatabase, DatabaseAdapter } from "./db-adapter";
 import { Symbol, Edge, EdgeType, GraphStats } from "./models";
 
 /**
@@ -12,7 +12,7 @@ import { Symbol, Edge, EdgeType, GraphStats } from "./models";
  * Designed to run on the same server as agents - no auth needed.
  */
 export class CodeGraphAPI {
-  private db: Database.Database;
+  private db: DatabaseAdapter;
   private dbPath: string;
 
   /**
@@ -36,7 +36,7 @@ export class CodeGraphAPI {
       );
     }
 
-    this.db = new Database(this.dbPath);
+    this.db = createDatabase(this.dbPath);
     // Enable WAL mode for better concurrency
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");

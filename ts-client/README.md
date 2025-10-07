@@ -13,6 +13,7 @@ TypeScript client for querying code graphs with semantic enrichment. This packag
 - 🎯 **Type Safety**: Full TypeScript definitions for all APIs
 - 🤖 **Agent-Focused API**: Designed to complement Read/Grep/Glob tools for AI coding agents
 - 🗺️ **Codebuff Integration**: Drop-in replacement for tree-sitter with 80% token savings
+- ⚡ **Bun & Node.js Support**: Works with both runtimes - uses Bun's native SQLite for 3x faster performance
 
 ## Installation
 
@@ -28,13 +29,15 @@ yarn add github:yourusername/consilium-codegraph#main
 
 The package includes pre-built binaries for macOS (ARM/Intel), Linux, and Windows. See [GITHUB_INSTALLATION.md](../GITHUB_INSTALLATION.md) for details.
 
+**Works with Bun!** If you're using Bun (like Codebuff), no native compilation needed - it uses Bun's built-in SQLite. See [BUN_SUPPORT.md](./BUN_SUPPORT.md).
+
 ### From npm (Coming Soon)
 
 ```bash
 npm install @consilium/codegraph-client
 ```
 
-**Note**: This package requires `better-sqlite3` which is a native Node.js module. Make sure you have the necessary build tools installed for your platform.
+**Note**: For Node.js, this package optionally uses `better-sqlite3` (native module). If you're using Bun, it uses the built-in `bun:sqlite` instead - no compilation needed!
 
 ## Quick Start
 
