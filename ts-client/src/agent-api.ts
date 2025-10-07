@@ -550,6 +550,120 @@ export class AgentCodeGraph {
   }
 
   /**
+   * Get file token data for Codebuff integration.
+   *
+   * Returns symbol scores and caller file paths in the exact format
+   * expected by Codebuff's code-map system.
+   *
+   * @returns Object with tokenScores and tokenCallers
+   *
+   * @example
+   * ```typescript
+   * const data = agent.getFileTokenData();
+   *
+   * // Returns:
+   * // {
+   * //   tokenScores: {
+   * //     "src/auth.ts": { "authenticate": 2.386, "validateToken": 1.609 }
+   * //   },
+   * //   tokenCallers: {
+   * //     "src/auth.ts": { "authenticate": ["src/api/routes.ts", "src/middleware.ts"] }
+   * //   }
+   * // }
+   * ```
+   */
+  getFileTokenData(): {
+    tokenScores: { [filePath: string]: { [token: string]: number } };
+    tokenCallers: { [filePath: string]: { [token: string]: string[] } };
+  } {
+    const tokenScores: { [filePath: string]: { [token: string]: number } } = {};
+    const tokenCallers: { [filePath: string]: { [token: string]: string[] } } = {};
+
+    // Symbols to ignore (common boilerplate)
+    const ignoredNames = new Set(["__init__", "__post_init__", "__call__", "constructor"]);
+
+    // Get all files with symbols
+    const filesStmt = this.db.prepare(`
+      SELECT DISTINCT file_path FROM symbol
+      ORDER BY file_path
+    `);
+    const files = filesStmt.all() as { file_path: string }[];
+
+    // Build FQN -> file path mapping for fast lookups
+    const fqnToFile = new Map<string, string>();
+    const allSymbolsStmt = this.db.prepare(`
+      SELECT fqn, file_path FROM symbol
+    `);
+    const allSymbols = allSymbolsStmt.all() as { fqn: string; file_path: string }[];
+    allSymbols.forEach(({ fqn, file_path }) => {
+      fqnToFile.set(fqn, file_path);
+    });
+
+    // Process each file
+    for (const { file_path } of files) {
+      // Get symbols in this file
+      const symbolsStmt = this.db.prepare(`
+        SELECT fqn, name, kind
+        FROM symbol
+        WHERE file_path = ?
+      `);
+      const symbols = symbolsStmt.all(file_path) as { fqn: string; name: string; kind: string }[];
+
+      for (const symbol of symbols) {
+        // Skip ignored symbols
+        if (ignoredNames.has(symbol.name)) {
+          continue;
+        }
+
+        // Get callers for this symbol
+        const callersStmt = this.db.prepare(`
+          SELECT DISTINCT src_symbol
+          FROM edge
+          WHERE dst_symbol = ?
+            AND (REPLACE(edge_type, '"', '') = 'Calls' OR edge_type = 'Calls')
+        `);
+        const callerRows = callersStmt.all(symbol.fqn) as { src_symbol: string }[];
+
+        // Calculate score based on number of callers
+        // Formula: 1.0 + ln(1 + numCallers)
+        const numCallers = callerRows.length;
+        const score = 1.0 + Math.log(1 + numCallers);
+        const roundedScore = Math.round(score * 1000) / 1000; // 3 decimal places
+
+        // Initialize file entries if needed
+        if (!tokenScores[file_path]) {
+          tokenScores[file_path] = {};
+        }
+        if (!tokenCallers[file_path]) {
+          tokenCallers[file_path] = {};
+        }
+
+        // Store score
+        tokenScores[file_path][symbol.name] = roundedScore;
+
+        // Convert caller FQNs to file paths
+        const callerFiles = new Set<string>();
+        for (const { src_symbol } of callerRows) {
+          const callerFile = fqnToFile.get(src_symbol);
+          if (callerFile) {
+            callerFiles.add(callerFile);
+          }
+
+          // Limit to 25 callers max (Codebuff's MAX_CALLERS)
+          if (callerFiles.size >= 25) {
+            break;
+          }
+        }
+
+        // Store caller files (deduplicated, limited to 25)
+        tokenCallers[file_path][symbol.name] = Array.from(callerFiles);
+      }
+    }
+
+    return { tokenScores, tokenCallers };
+  }
+
+  /**
    * Close the database connection
    */
   close(): void {

@@ -1,120 +1,68 @@
-#!/usr/bin/env node
+#!/usr/bin/env ts-node
 /**
- * Quick test of the AgentCodeGraph API
+ * Standalone test/demo script for Agent API
+ * Run with: npx ts-node test-agent-api.ts
  */
 
 import { AgentCodeGraph } from "./src/agent-api";
+import { join } from "path";
 
-const repoPath = "/Users/pranavsharan/Developer/consilium-codegraph";
+const testRepoPath = join(__dirname, "..", "test_repo");
 
-console.log("🧪 Testing AgentCodeGraph API\n");
+console.log("🧪 Testing Agent API\n");
 
-const agent = new AgentCodeGraph(repoPath);
+const agent = new AgentCodeGraph(testRepoPath);
 
-// Test 1: findSymbols
-console.log("Test 1: findSymbols()");
-const symbols = agent.findSymbols("test", { kind: ["Function"], limit: 5 });
-console.log(`  ✓ Found ${symbols.length} functions with 'test' in name`);
-if (symbols.length > 0) {
-  console.log(`    Example: ${symbols[0].name} at ${symbols[0].location.file}:${symbols[0].location.line}`);
-}
+console.log("1️⃣  Finding symbols with 'User' in name:");
+const userSymbols = agent.findSymbols("User");
+console.log(`   Found ${userSymbols.length} symbols`);
+userSymbols.slice(0, 3).forEach((sym) => {
+  console.log(`   - ${sym.name} (${sym.kind}) at ${sym.location.file}:${sym.location.line}`);
+});
 
-// Test 2: getSymbol (basic)
-console.log("\nTest 2: getSymbol() - basic");
-if (symbols.length > 0) {
-  const symbolInfo = agent.getSymbol(symbols[0].fqn);
-  if (symbolInfo) {
-    console.log(`  ✓ Got symbol: ${symbolInfo.name} (${symbolInfo.kind})`);
-    console.log(`    Location: ${symbolInfo.location.file}:${symbolInfo.location.line}`);
-  } else {
-    console.log("  ✗ Failed to get symbol");
-  }
-}
+console.log("\n2️⃣  Finding all functions:");
+const functions = agent.findSymbols("", { kind: ["Function"] });
+console.log(`   Found ${functions.length} functions`);
+functions.slice(0, 3).forEach((sym) => {
+  console.log(`   - ${sym.name} at ${sym.location.file}:${sym.location.line}`);
+});
 
-// Test 3: getSymbol (with relationships)
-console.log("\nTest 3: getSymbol() - with relationships");
-if (symbols.length > 0) {
-  const symbolInfo = agent.getSymbol(symbols[0].fqn, {
+if (functions.length > 0) {
+  console.log("\n3️⃣  Getting detailed info for first function:");
+  const info = agent.getSymbol(functions[0].fqn, {
     includeCallers: true,
     includeCallees: true,
   });
-  if (symbolInfo) {
-    console.log(`  ✓ Got symbol with relationships`);
-    console.log(`    Callers: ${symbolInfo.callers?.length || 0}`);
-    console.log(`    Callees: ${symbolInfo.callees?.length || 0}`);
+  console.log(`   Name: ${info?.name}`);
+  console.log(`   Kind: ${info?.kind}`);
+  console.log(`   Location: ${info?.location.file}:${info?.location.line}`);
+  console.log(`   Callers: ${info?.callers?.length || 0}`);
+  console.log(`   Callees: ${info?.callees?.length || 0}`);
+
+  if (info?.callers && info.callers.length > 0) {
+    console.log("\n4️⃣  Navigating call graph (who calls this):");
+    const callers = agent.queryRelationships(functions[0].fqn, "called-by", { depth: 2 });
+    console.log(`   Found ${callers.length} callers (depth ≤ 2)`);
+    callers.slice(0, 5).forEach((caller) => {
+      console.log(`   - ${caller.symbol} at depth ${caller.depth}`);
+    });
   }
-}
 
-// Test 4: queryRelationships
-console.log("\nTest 4: queryRelationships()");
-const allFunctions = agent.findSymbols("", { kind: ["Function"], limit: 10 });
-const funcWithCalls = allFunctions.find(fn => {
-  const info = agent.getSymbol(fn.fqn, { includeCallees: true });
-  return info && info.callees && info.callees.length > 0;
-});
-
-if (funcWithCalls) {
-  const calls = agent.queryRelationships(funcWithCalls.fqn, "calls", { depth: 1 });
-  console.log(`  ✓ Found ${calls.length} things called by ${funcWithCalls.name}`);
-  if (calls.length > 0) {
-    console.log(`    Example: ${calls[0].symbol} at depth ${calls[0].depth}`);
-  }
-}
-
-// Test 5: queryRelationships - deep traversal
-console.log("\nTest 5: queryRelationships() - deep traversal");
-if (funcWithCalls) {
-  const deepCalls = agent.queryRelationships(funcWithCalls.fqn, "calls", {
-    depth: 2,
-    limit: 20
-  });
-  console.log(`  ✓ Found ${deepCalls.length} transitive dependencies (depth=2)`);
-
-  const byDepth = deepCalls.reduce((acc, node) => {
-    acc[node.depth] = (acc[node.depth] || 0) + 1;
-    return acc;
-  }, {} as Record<number, number>);
-
-  Object.entries(byDepth).forEach(([depth, count]) => {
-    console.log(`    Depth ${depth}: ${count} symbols`);
+  console.log("\n5️⃣  Navigating call graph (what this calls):");
+  const callees = agent.queryRelationships(functions[0].fqn, "calls", { depth: 2 });
+  console.log(`   Found ${callees.length} callees (depth ≤ 2)`);
+  callees.slice(0, 5).forEach((callee) => {
+    console.log(`   - ${callee.symbol} at depth ${callee.depth}`);
   });
 }
 
-// Test 6: Find entry points
-console.log("\nTest 6: Finding entry points");
-const entryPoints = allFunctions.filter(fn => {
-  const info = agent.getSymbol(fn.fqn, { includeCallers: true });
-  return info && (!info.callers || info.callers.length === 0);
-});
-console.log(`  ✓ Found ${entryPoints.length} entry points (functions with no callers)`);
-if (entryPoints.length > 0) {
-  console.log(`    Examples: ${entryPoints.slice(0, 3).map(ep => ep.name).join(", ")}`);
-}
+console.log("\n6️⃣  Testing error handling:");
+const nonExistent = agent.getSymbol("This::Does::Not::Exist");
+console.log(`   Non-existent symbol: ${nonExistent === null ? "✓ null" : "✗ unexpected result"}`);
 
-// Test 7: Search by kind
-console.log("\nTest 7: Search by kind");
-const classes = agent.findSymbols("", { kind: ["Class"], limit: 5 });
-console.log(`  ✓ Found ${classes.length} classes`);
-if (classes.length > 0) {
-  classes.slice(0, 3).forEach(cls => {
-    console.log(`    - ${cls.name} in ${cls.location.file}`);
-  });
-}
-
-// Test 8: Get container relationships
-console.log("\nTest 8: Container relationships");
-if (classes.length > 0) {
-  const classInfo = agent.getSymbol(classes[0].fqn, { includeContains: true });
-  if (classInfo && classInfo.contains) {
-    console.log(`  ✓ Class "${classInfo.name}" contains ${classInfo.contains.length} members`);
-    if (classInfo.contains.length > 0) {
-      classInfo.contains.slice(0, 3).forEach(member => {
-        console.log(`    - ${member}`);
-      });
-    }
-  }
-}
+const noMatches = agent.findSymbols("ThisDefinitelyDoesNotExist12345");
+console.log(`   No matches search: ${noMatches.length === 0 ? "✓ empty array" : "✗ unexpected result"}`);
 
 agent.close();
 
-console.log("\n✅ All tests completed!\n");
+console.log("\n✅ All tests completed!");

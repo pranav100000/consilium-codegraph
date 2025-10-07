@@ -12,6 +12,7 @@ TypeScript client for querying code graphs with semantic enrichment. This packag
 - 💾 **SQLite Backend**: Direct database access for maximum performance
 - 🎯 **Type Safety**: Full TypeScript definitions for all APIs
 - 🤖 **Agent-Focused API**: Designed to complement Read/Grep/Glob tools for AI coding agents
+- 🗺️ **Codebuff Integration**: Drop-in replacement for tree-sitter with 80% token savings
 
 ## Installation
 
@@ -81,8 +82,10 @@ agent.close();
 - 🔍 **Find symbols**: `findSymbols()` - structured search (better than grep)
 - 🔗 **Get relationships**: `getSymbol()` - understand dependencies
 - 🕸️ **Navigate graph**: `queryRelationships()` - deep traversal
+- 🎯 **Codebuff Integration**: `getFileTokenData()` - drop-in replacement for tree-sitter
 
 📚 **See [AGENT_API.md](./AGENT_API.md) for complete documentation**
+📚 **See [CODEBUFF_INTEGRATION.md](../CODEBUFF_INTEGRATION.md) for Codebuff integration**
 
 ### Simple API (Recommended for most use cases)
 
@@ -301,8 +304,20 @@ npm run build
 ### Testing
 
 ```bash
+# Run all tests
 npm test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run standalone examples/demos
+npx ts-node test-agent-api.ts
+npx ts-node test-codebuff-integration.ts
 ```
+
+**Test Structure:**
+- `tests/*.test.ts` - Formal unit tests using vitest framework
+- `test-*.ts` - Standalone example/demo scripts for manual testing
 
 ### Linting
 
