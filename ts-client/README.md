@@ -16,27 +16,25 @@ TypeScript client for querying code graphs with semantic enrichment. This packag
 
 ## Installation
 
+### From GitHub (Recommended)
+
+**Includes pre-built binaries - no Rust toolchain needed!**
+
+```bash
+npm install github:yourusername/consilium-codegraph#main
+# or
+yarn add github:yourusername/consilium-codegraph#main
+```
+
+The package includes pre-built binaries for macOS (ARM/Intel), Linux, and Windows. See [GITHUB_INSTALLATION.md](../GITHUB_INSTALLATION.md) for details.
+
+### From npm (Coming Soon)
+
 ```bash
 npm install @consilium/codegraph-client
-# or
-yarn add @consilium/codegraph-client
-# or
-pnpm add @consilium/codegraph-client
 ```
 
 **Note**: This package requires `better-sqlite3` which is a native Node.js module. Make sure you have the necessary build tools installed for your platform.
-
-## Prerequisites
-
-You need to build the Rust CLI (one-time setup):
-
-```bash
-# From the consilium-codegraph repo
-cd /path/to/consilium-codegraph
-cargo build --release
-```
-
-That's it! The TypeScript client can now index repositories automatically.
 
 ## Quick Start
 

@@ -23,25 +23,66 @@ export interface ScanResult {
 }
 
 /**
+ * Get the platform-specific binary name and directory
+ */
+function getPlatformBinary(): { platform: string; binaryName: string } {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  // Map Node.js platform/arch to our bin directory structure
+  let platformDir: string;
+  if (platform === "darwin" && arch === "arm64") {
+    platformDir = "darwin-arm64";
+  } else if (platform === "darwin" && arch === "x64") {
+    platformDir = "darwin-x64";
+  } else if (platform === "linux" && arch === "x64") {
+    platformDir = "linux-x64";
+  } else if (platform === "win32" && arch === "x64") {
+    platformDir = "win32-x64";
+  } else {
+    platformDir = `${platform}-${arch}`;
+  }
+
+  const binaryName = platform === "win32" ? "reviewbot.exe" : "reviewbot";
+
+  return { platform: platformDir, binaryName };
+}
+
+/**
  * Find the Rust CLI binary
  */
 function findRustCLI(): string | null {
-  // Try common locations
+  const { platform, binaryName } = getPlatformBinary();
+
+  // 1. FIRST: Try bundled binary (distributed with npm package)
+  // This is relative to the compiled JS in dist/
+  const bundledPaths = [
+    join(__dirname, "..", "bin", platform, binaryName),
+    join(__dirname, "..", "..", "bin", platform, binaryName),
+  ];
+
+  for (const path of bundledPaths) {
+    if (existsSync(path)) {
+      return path;
+    }
+  }
+
+  // 2. FALLBACK: Try development/build locations
   const possiblePaths = [
     // Development build
-    join(process.cwd(), "target", "release", "reviewbot"),
-    join(process.cwd(), "target", "debug", "reviewbot"),
+    join(process.cwd(), "target", "release", binaryName),
+    join(process.cwd(), "target", "debug", binaryName),
 
     // Installed location (if ts-client is in the repo)
-    join(process.cwd(), "..", "target", "release", "reviewbot"),
-    join(process.cwd(), "..", "target", "debug", "reviewbot"),
+    join(process.cwd(), "..", "target", "release", binaryName),
+    join(process.cwd(), "..", "target", "debug", binaryName),
 
     // Two levels up (if using from node_modules)
-    join(process.cwd(), "..", "..", "target", "release", "reviewbot"),
+    join(process.cwd(), "..", "..", "target", "release", binaryName),
 
     // Global install
     "/usr/local/bin/reviewbot",
-    join(process.env.HOME || "", ".cargo", "bin", "reviewbot"),
+    join(process.env.HOME || "", ".cargo", "bin", binaryName),
   ];
 
   for (const path of possiblePaths) {
@@ -50,9 +91,10 @@ function findRustCLI(): string | null {
     }
   }
 
-  // Try PATH
+  // 3. LAST: Try PATH
   try {
-    execSync("which reviewbot", { stdio: "pipe" });
+    const whichCmd = process.platform === "win32" ? "where" : "which";
+    execSync(`${whichCmd} reviewbot`, { stdio: "pipe" });
     return "reviewbot";
   } catch {
     return null;

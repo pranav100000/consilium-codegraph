@@ -4,6 +4,12 @@
   "description": "TypeScript client for Consilium CodeGraph - query code graphs with semantic enrichment",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "bin/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
